@@ -4,7 +4,7 @@ Soli is a free, ad-free, open-source Solitaire.
 
 ---
 
-## 1.0 (upcoming)
+## 1.0.0 — 2026-07-09
 
 - **Unlimited game history**: history now lives in an on-device database — every game you've played stays available, and the history screen stays fast
 - **Smoother board**: rebuilt card rendering; no more stutter or memory build-up after many games in a row, plus tightened draw and wiggle animations
@@ -13,7 +13,16 @@ Soli is a free, ad-free, open-source Solitaire.
 - Faster loading of settings and saved games
 - Framework upgrade (Expo SDK 57, React Native 0.86)
 
----
+Google Play:
+
+Soli 1.0 is here!
+
+- Catalog of 50'000 solvable games for all draw 1 to 5 modes
+- Smoother and many more celebrations
+- Improved history and settings
+- Many under the hood upgrades to make everything smoother, faster, and more reliable
+
+Happy playing!
 
 ## 0.8.0 — 2026-06-11
 
@@ -22,6 +31,7 @@ Soli is a free, ad-free, open-source Solitaire.
 
 Google Play:
 Added game mode "Draw 3" (or any other number between 1 and 5). Go to the settings to turn it on. Happy playing!
+
 ---
 
 ## 0.7.0 — 2026-04-02
@@ -29,6 +39,7 @@ Added game mode "Draw 3" (or any other number between 1 and 5). Go to the settin
 - More reliable card-flight animations: rapid moves no longer spawn duplicate flights during fast auto-complete
 
 Google Play:
+
 1. Introduced a setting to disable automatically moving all cards up to the foundation once all cards are uncovered. (Community request)
 2. Performance improvements.
 
@@ -42,6 +53,7 @@ Google Play:
 
 Google Play:
 Improved card layout and winning animation.
+
 ---
 
 ## 0.5.0 — 2026-03-11
@@ -50,6 +62,7 @@ Improved card layout and winning animation.
 
 Google Play:
 Improved animations, card layout, and a bug fix.
+
 ---
 
 ## 0.4.0 — 2026-03-03
@@ -58,6 +71,7 @@ Improved animations, card layout, and a bug fix.
 - Snappier auto-complete and celebrations
 
 Google Play:
+
 1. Improved animations and a bug fix.
 
 ---
@@ -71,6 +85,7 @@ Google Play:
 
 Google Play:
 Animation and board layout improvements
+
 ---
 
 ## 0.2.0 — 2025-12-14
@@ -81,6 +96,7 @@ Animation and board layout improvements
 
 Google Play:
 Animation and board layout improvements
+
 ---
 
 ## 0.1.1 — 2025-11-30

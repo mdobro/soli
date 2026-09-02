@@ -32,6 +32,7 @@ import { computeCardMetrics } from '../utils/cardMetrics'
 import { useKlondikeTimer } from './useKlondikeTimer'
 import { useKlondikePersistence } from './useKlondikePersistence'
 import { useUndoHint } from './useUndoHint'
+import { useHint } from './useHint'
 import { useKlondikeHistoryEntry } from './useKlondikeHistoryEntry'
 import { useSolvableDealSelector } from './useSolvableDealSelector'
 import { useCelebrationController } from './useCelebrationController'
@@ -163,11 +164,15 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     setDrawCount,
     setAutoUpEnabled,
     setSolvableGamesOnly,
+    setWarningMode,
+    setHintButtonEnabled,
   } = useSettings()
   const { showMoves, showTime } = settingsState.statistics
   const solvableGamesOnly = settingsState.solvableGamesOnly
   const preferredDrawCount = settingsState.drawCount
   const autoUpEnabled = settingsState.autoUpEnabled
+  // Warning-mode select + hint button toggle (F14) — see settings.tsx.
+  const { warningMode, hintButton: hintButtonEnabled } = settingsState.hints
   const developerModeEnabled = settingsState.developerMode
 
   const animationToggles = useAnimationToggles()
@@ -547,6 +552,8 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     setDrawCount,
     setAutoUpEnabled,
     setSolvableGamesOnly,
+    setWarningMode,
+    setHintButtonEnabled,
     resetUndoHintForTesting,
     dealNewGameForTesting,
     startGameFromExactDeal,
@@ -829,6 +836,17 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     [attemptAutoMove, dispatchGameAction, notifyInvalidMove]
   )
 
+  // Hint button + background warnings (hints plan; warning-mode select since
+  // F14). Dispatchless since feedback round 1 (2026-07-23): hint visuals are a
+  // dedicated overlay, never selection state, so useHint needs no dispatcher.
+  const { requestHint, activeHint, hintBubbleText, warningEmphasisNonce } = useHint({
+    state,
+    stateRef,
+    warningMode,
+    hintButtonEnabled,
+    demoPlaybackActiveRef,
+  })
+
   const {
     shouldShowUndo,
     canUndo,
@@ -921,7 +939,12 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
 
   // requirement 20-6: onUndoPress removed - tap is handled by composed gesture
   const undoScrubProps: UndoScrubberProps = {
-    visible: shouldShowUndo,
+    // With the Hint button ON the dock also shows on a fresh deal (empty
+    // timeline) so the button is reachable from move zero; the Undo pill is
+    // then visible but inert (canUndo false dims it, the pan/tap guards
+    // no-op). With the button OFF this is exactly the pre-feature
+    // `shouldShowUndo` — the warning-only settings never affect the dock.
+    visible: shouldShowUndo || (hintButtonEnabled && !state.hasWon && !celebrationState),
     scrubActive,
     scrubIndex: scrubAnimatedIndex,
     sliderMax: scrubSliderMax,
@@ -930,6 +953,14 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     canUndo,
     onTrackMetrics: handleTrackMetrics,
     hintVisible: undoHintVisible,
+    hintButtonVisible: hintButtonEnabled,
+    // Deliberately NO hintDisabled/busy prop (user feedback 2026-07-23: the
+    // solver-busy style blink on every move was a no-go). requestHint's own
+    // guards cover won/auto-complete/demo; board-locked situations hide the
+    // whole dock anyway.
+    onHintPress: requestHint,
+    hintBubbleText,
+    warningEmphasisNonce,
   }
 
   const viewProps: KlondikeGameViewProps = {
@@ -947,6 +978,19 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     onCelebrationBadgePress: cycleCelebrationMode,
     onCelebrationOverlayReady: handleCelebrationOverlayReady,
     undoScrubProps,
+    // Hint visuals (feedback round 1; all kinds incl. the stock ring since
+    // F13): null during normal play — the overlay is only mounted while a
+    // hint is showing, so it costs nothing per move and cannot disturb the
+    // card layer's memo boundaries.
+    hintOverlayProps: activeHint
+      ? {
+          hint: activeHint,
+          wasteCount: state.waste.length,
+          tableau: state.tableau,
+          layouts: absoluteCardLayerLayouts,
+          cardMetrics,
+        }
+      : null,
     absoluteCardLayerProps: {
       stock: state.stock,
       waste: state.waste,

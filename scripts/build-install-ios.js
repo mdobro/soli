@@ -54,6 +54,7 @@ const {
   acquireBuildLock,
   createLogMonitor,
 } = require('./lib/build-tools')
+const { ensureRustSolverArtifacts } = require('./ensure-rust-solver')
 
 // No bash phase on iOS, so the total duration starts here (Android seeds this
 // from run-android-release.sh to include adb discovery).
@@ -487,6 +488,12 @@ const main = async () => {
   // harmless to a Release/--no-bundler build.
   acquireBuildLock()
   await preflightKillCompetingBuilds()
+
+  // Rust solver artifacts are gitignored (hints plan doc, "Artifacts-in-git
+  // decision 2026-07-23") — must exist BEFORE expo run:ios's pod install can
+  // see the vendored XCFramework. After the lock on purpose: two entries must
+  // never cargo-build concurrently. Silent no-op (<1 s) when up to date.
+  ensureRustSolverArtifacts()
 
   const { device, needsBoot } = await selectSimulator()
   if (needsBoot) {

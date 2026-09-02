@@ -20,14 +20,14 @@ Single source of truth for testing Soli on devices/simulators. Package/bundle id
 
 Both commands are self-contained: they kill competing builds (sparing idle Gradle daemons and Metro), mutually exclude via `/tmp/soli-build.lock` (pid file; stale locks auto-clear), verify the install, launch the app, and exit — **no manual pgrep/kill or `adb devices` checks needed**. Trust the lock + process list over stale terminal-file metadata. Full build logs: `.test-artifacts/builds/` (path printed on failure with a tail).
 
-- **Android (physical phone, Release APK)**: `yarn release` — wireless adb discovery + signing patch + pin to `<ip>:5555` + wake/unlock all automatic; physical devices only, never an emulator; single-ABI arm64-v8a.
-- **iOS (simulator, Release)**: `yarn ios` — simulator pick: booted > `SOLI_IOS_SIMULATOR=<name>` > newest iPhone (boots it if needed). Incremental by default; clean build (delete `ios/`) only after native dependency changes. `--debug`: Debug config with Metro attached, lingers on purpose (manual dev; rerun plain `yarn ios` to restore Release; excludes the flags below).
+- **Android (physical phone, Release APK)**: `yarn release` — wireless adb discovery + signing patch + pin to `<ip>:5555` + wake/unlock all automatic; physical devices only, never an emulator; single-ABI arm64-v8a. Several adb devices connected (e.g. the Mi MIX): `ADB_WIFI_TARGET=<ip:5555> yarn release`; `android-ready.sh`/raw adb want `ANDROID_SERIAL=<serial>` instead.
+- **iOS (simulator, Release)**: `yarn ios` — simulator pick: booted > `SOLI_IOS_SIMULATOR=<name>` > newest iPhone (boots it if needed). Incremental by default; clean build (delete `ios/`) only after native dependency changes — that INCLUDES a new local Expo module in `modules/` (incremental `expo run:ios` does NOT re-run pod install for it, and a stale `ios/` also pins an old buildNumber → install verification fails). `--debug`: Debug config with Metro attached, lingers on purpose (manual dev; rerun plain `yarn ios` to restore Release; excludes the flags below).
 - Shared flags: `--logs` streams `[SoliDev]`-filtered output until Ctrl+C · `--auto-solve` builds + runs the demo playlist with a pass/fail exit (`DEMO_GAME_LIMIT=N` limits games, max 20).
 - **Never start two builds in parallel** — the machine can't handle it; the lock fails the second fast anyway.
 
 ## 3. Demo deep-link catalog
 
-Parsed by `processDemoLink()` in `src/features/klondike/hooks/useDemoGameLauncher.ts`. Every demo deep link auto-enables developer mode (which turns `[SoliDev]` logging on).
+Parsed by `processDemoLink()` in `src/features/klondike/hooks/useDemoGameLauncher.ts`. Every demo deep link auto-enables developer mode (which turns `[SoliDev]` logging on) — and puts a "Demo" button in the game header. For clean store-style screenshots, add **`&screenshot=1`** to any catalog link (or pass `--screenshot` to the wrapper): the link behaves as usual but forces developer mode OFF instead of ON — no Demo button, no celebration debug badge, no Settings toggling needed. Trade-off: dev mode also gates `[SoliDev]` logging, so screenshot-mode links log nothing.
 
 | URL | Effect / when to use |
 |---|---|
@@ -35,13 +35,13 @@ Parsed by `processDemoLink()` in `src/features/klondike/hooks/useDemoGameLaunche
 | `soli://?demo=scrubbed` | **Scrubbed mid-game fixture**: deterministic board, 80 moves scrubbed to index 40 → 40 undos + 40 redos, Auto Up off. `&steps=S&scrub=K` for other depths (clamped; defaults keep the pinned card labels valid) |
 | `soli://?demo=nearwin&left=N` | **Near-win fixture**: solution replayed to N moves before completion (default 1), Auto Up off — finish manually for a REAL win + celebration |
 | `soli://?deal=<exactId>&draw=N` | New game from an exact deal id (`E1_...`) — bug repro, hand-crafted scenarios. `draw` optional; invalid id devLogged + ignored |
-| `soli://?set=drawCount:3,autoUp:off,solvableOnly:on` | Apply settings without UI taps (`drawCount` 1–5, `autoUp`/`solvableOnly` on/off). Unknown pairs devLogged + skipped, rest applies |
+| `soli://?set=drawCount:3,autoUp:off,solvableOnly:on,warnings:stuck,hintButton:on` | Apply settings without UI taps (`drawCount` 1–5; booleans on/off: `autoUp`, `solvableOnly`, `hintButton`; `warnings:off\|stuck\|unwinnable` = warning-mode select [stuck = "no more useful moves", the default]. Aliases: `hints` → `hintButton`; round-2 `stuckWarning`/`unwinnableWarning:on\|off` map into the select without downgrading a stronger mode). Unknown pairs devLogged + skipped, rest applies |
 | `soli://?reset=undoHint` / `?reset=game` | Targeted resets, section 4 |
 | `soli://?celebration=<modeId\|random>` | Celebration overlay on the current board WITHOUT winning (note below) |
 | `soli://demo-game` | Old handcrafted demo (rarely useful — no undo history) |
 | `soli://?seedHistory=default` / `=clear` | Seed / clear history rows, section 4 |
 
-`recordHistory=false` (alias `history`) disables reducer history snapshots on playlist runs. One param family per link (the first matching family wins).
+`recordHistory=false` (alias `history`) disables reducer history snapshots on playlist runs. `screenshot=1` (accepts `1`/`true`/`on`) combines with ANY family: dev mode forced OFF, all dev UI suppressed (see above). One param family per link (the first matching family wins). During a screenshot session, EVERY link needs the flag — including cleanup links like `yarn seedhistory clear`, which otherwise re-enable dev mode and put the Demo button back.
 
 Delivery — always use `yarn deeplink`. **Default target: the connected Android device**; falls back to a booted iOS simulator only when no adb device is connected. **Agents testing on the simulator must pass `--ios`** — the phone is usually connected, so the fallback WILL hit it. `--serial <s>` when several adb devices. On Android the wrapper self-heals: no device → it runs `scripts/android-ready.sh` (wireless reconnect) itself, then wakes + unlocks before delivering.
 
@@ -53,7 +53,7 @@ Delivery — always use `yarn deeplink`. **Default target: the connected Android
 | `yarn seedhistory [clear]` | `?seedHistory=default\|clear` | warm |
 | `yarn deeplink '<soli:// url>'` | any raw catalog link | warm |
 
-`--cold`/`--warm` override; `--no-retry` keeps the URL as-is (dedup applies; an existing `#fragment` also skips the nonce).
+`--cold`/`--warm` override; `--no-retry` keeps the URL as-is (dedup applies; an existing `#fragment` also skips the nonce); `--screenshot` appends `screenshot=1` to any shortcut or raw URL (store-screenshot capture, e.g. `yarn celebration 39 --screenshot`).
 
 Raw one-liners (reference only — the wrapper adds the `#retry-<nonce>` that defeats both dedup layers [Android intent dedup + in-app repeated-URL guard] and the cold force-stop; raw links need those by hand):
 
@@ -66,7 +66,7 @@ Caveats: `?set=` changes settings, but an in-progress game keeps the drawCount i
 
 ### Celebration testing
 
-`yarn celebration [modeId]` shows the full-deck celebration overlay immediately — no win needed, any board (synthesizes a 52-card won-board payload). Mode ids: stable ids in `src/animation/celebrationModes.ts` (`CELEBRATION_MODE_METADATA`); unknown id → devLogged + ignored. The preview runs in dev-hold: loops indefinitely, no new-game dialog; the bottom-right badge shows `Celebration NN · Name` — tap the badge to cycle modes, tap anywhere else to dismiss silently back to the untouched game. Different mode directly: re-fire the shortcut.
+`yarn celebration [modeId]` shows the full-deck celebration overlay immediately — no win needed, any board (synthesizes a 52-card won-board payload). Mode ids: stable ids in `src/animation/celebrationModes.ts` (`CELEBRATION_MODE_METADATA`); unknown id → devLogged + ignored. The preview runs in dev-hold: loops indefinitely, no new-game dialog; the bottom-right badge shows `Celebration NN · Name` — tap the badge to cycle modes, tap anywhere else to dismiss silently back to the untouched game. Different mode directly: re-fire the shortcut. For store shots use `yarn celebration <modeId> --screenshot`: no badge (dev mode stays off), the loop + tap-to-dismiss still work — cycling via badge tap obviously isn't available, re-fire per mode instead.
 
 ## 4. State resets & seeding
 
@@ -106,21 +106,24 @@ agent-device usage:
 
 - Invoke as `yarn agent-device ...` (repo-pinned; not `npx`). `snapshot -i` dedupes identical labels; `snapshot --raw` counts face-down cards.
 - **Phone asleep / wireless adb dropped / taps failing → `scripts/android-ready.sh`**: the same bounded discovery/reconnect as `yarn release` + pin to `<ip>:5555` + wake + unlock + state summary. `--keep-awake` for long sessions (raises screen-off timeout to 600 s, prints the restore command — run it when done). **NEVER hand-roll adb wake/reconnect loops.**
-- Only ONE agent-device session may drive the phone at a time — the build lock does NOT cover device sessions. List/close stale sessions before starting.
-- Simulators are contested too: `open` fails with DEVICE_IN_USE naming the owner, and `session list` can report `[]` while a concurrent agent still owns the device — do NOT keep closing someone else's live session. Instead create a throwaway simulator and install the already-built app (no rebuild): `xcrun simctl create "Soli Test iPhone" "iPhone 17 Pro" <ios-runtime>`, boot, `xcrun simctl install <udid> ~/Library/Developer/Xcode/DerivedData/Soli-*/Build/Products/Release-iphonesimulator/Soli.app` (path printed near the end of the yarn ios log; install can fail transiently right after boot — retry once). Target links at the udid, pass `--device "Soli Test iPhone"` to agent-device, delete the sim when done.
+- Only ONE agent-device session may drive the phone at a time — the build lock does NOT cover device sessions. List/close stale sessions before starting (`yarn agent-device session list`; end the active session with `yarn agent-device close` — `session` itself only supports `list`/`state-dir`, there is no `session close`).
+- **Cross-repo device lock** (the invent repo's agents share this phone): before driving the Android device, check `/tmp/android-device.lock` — if it exists and is < 60 min old and not yours, the device is TAKEN: wait or use the sole iOS simulator when it is free. While driving, create it with `soli:<agent>:<timestamp>`; remove it when done. `scripts/android-ready.sh` enforces this automatically (aborts when a fresh foreign lock exists; `ANDROID_LOCK_BYPASS=1` only when Karim says so).
+- This Mac intentionally keeps exactly one iOS simulator: `iPhone 17 Pro`. If `open` reports DEVICE_IN_USE, do not close another agent's session and do not create a throwaway simulator; wait for the owner or use the Android phone. This avoids ambiguous targets and duplicate simulator disk usage.
+- `yarn agent-device` disables the iOS runner's idle stop. Keep using normal `close`: it ends the logical session while retaining the healthy XCTest runner, avoiding an iOS 26.5 SpringBoard crash during XCTest teardown. Do not pass `close --shutdown` or manually kill its `xcodebuild` runner unless another XCTest tool (such as Appium) must take ownership; that forced handoff can still produce one Apple crash notification.
+- Reuse one named agent-device session for the whole iOS testing assignment instead of opening and closing around each action. Pass the same `--session <name>` to every command, then close it once after the final verification.
 
-Gotchas: `uiautomator dump` fails on this app (the game timer never idles). Drawer tabs can report negative coordinates on iOS — navigate via hamburger button → tab label instead.
+Gotchas: agent-device `screenshot` costs ~2 s — for short-lived UI (hint rings auto-clear after 2.5 s), chain `adb -s <serial> exec-out screencap -p > file.png` right after the triggering press instead. To ASSERT a colored overlay (e.g. the amber hint ring, `COLOR_HINT` #FFB020) in a screenshot without eyeballing: `ffmpeg -i shot.png -vf "crop=<slot rect>,colorkey=0xFFB020:0.14:0.0,format=rgba,alphaextract,signalstats,metadata=print:key=lavfi.signalstats.YAVG" -f null -` → YAVG ≈255 clean, noticeably lower (~226 for a ring) when present — good for unattended loops like "follow draw hints until a move hint appears". Screenrecord frame numbers are VFR (encode-on-change): locate moments by content signals (luma spikes), never by frame arithmetic; a LOW unique-frame count itself proves a static screen (useful for animations-off checks). `uiautomator dump` fails on this app (the game timer never idles). Drawer tabs report off-screen coordinates on iOS until the drawer is OPEN — label selectors (`label=History`) fail with "not safe to click"; the reliable loop is tap the hamburger @ref → fresh `snapshot -i` → tap the tab's fresh @ref (refs go stale after every navigation). Don't use foundation/card taps as timer nudges — tap-to-move can auto-play cards (tap Undo+Redo or empty green instead).
 
 ## 6. Scrubber automation
 
 Enter the deterministic fixture first: `yarn scrubtest` (index 40 of 80).
 
 - **Android**: native pan via agent-device. Needs ≥ ~275 px horizontal travel; verify the landed index and retry (±1 jitter is normal).
-- **iOS**: agent-device cannot pan (single ~300 ms swipe; the RNGH pan never activates). Use Appium: close any agent-device session (and idle `xcodebuild ... AgentDeviceRunner` processes — both are XCTest-based, serialize them), start `appium` in a separate terminal, then `node scripts/ios-scrub.js --from 40 --max 80 --to 20` (also `--to 0`/`--to max`). First session per boot ≈ 40 s (WDA build), later ≈ 5 s. Recreate the agent-device session afterwards.
+- **iOS**: agent-device cannot pan (single ~300 ms swipe; the RNGH pan never activates). Use Appium only when scrubber coverage is necessary: close the agent-device session, explicitly release its retained `xcodebuild ... AgentDeviceRunner` process, start `appium` in a separate terminal, then `node scripts/ios-scrub.js --from 40 --max 80 --to 20` (also `--to 0`/`--to max`). Both tools are XCTest-based and must be serialized. Recreate the agent-device session afterwards; releasing XCTest may trigger the known iOS 26.5 SpringBoard teardown crash once.
 
 ## 7. Logs
 
-- `[SoliDev]` logging (`devLog`) is gated on developer mode — OFF by default. Any demo deep link enables it; otherwise expect silence.
+- `[SoliDev]` logging (`devLog`) is gated on developer mode — OFF by default. Any demo deep link enables it (EXCEPT `screenshot=1` links, which force it off); otherwise expect silence.
 - Android: `yarn release --logs`, or raw `adb -s <serial> logcat`. iOS: `yarn ios --logs` (JS console goes to the unified os_log stream, not the console-pty); if it shows nothing, trigger activity first (e.g. a demo deep link).
 - Manual iOS stream: `xcrun simctl spawn <udid> log stream --level debug --predicate 'process == "Soli"' --style compact | rg --line-buffered 'SoliDev'` — **`--level debug` is required**, the default level drops the Info-level JS lines.
 
@@ -131,10 +134,14 @@ Enter the deterministic fixture first: `yarn scrubtest` (index 40 of 80).
 | Empty Android a11y tree | Historically an overlay (Tamagui ToastViewport) swallowing the tree; check for full-screen overlays before blaming the board |
 | adb "more than one device" | ALWAYS pass `-s <serial>`; kill stray emulators — release testing is physical-only |
 | Device busy / taps do nothing | A stale agent-device session holds the device — list and close it |
+| Screenshot suddenly shows a DIFFERENT app (or a pixel oracle goes out of family) | Another app stole the foreground mid-session (shared phone; the device lock only serializes agents, not notifications). STOP tapping, confirm via `dumpsys activity activities \| grep ResumedActivity`, recover with `adb shell am start -n ch.karimattia.soli/.MainActivity` (process usually survives, in-memory state intact), retake the interrupted steps |
 | Wireless adb dropped / phone dozed | `scripts/android-ready.sh` (reconnect + pin + wake + unlock in one shot); never hand-roll loops |
 | Terminal file says a build is running but nothing happens | Terminal metadata can be stale; trust `/tmp/soli-build.lock` and `ps` |
 | Deep link seems ignored | You bypassed the wrapper — `yarn deeplink` adds the retry nonce + cold force-stop; raw links need `#retry-N` / manual force-stop |
+| iOS sim deep links suddenly ALL dead (openurl silent, no alert, XCTest main-thread timeouts) | App process wedged — seen after `simctl uninstall`+`install`+`launch` over a running app. `xcrun simctl terminate <udid> ch.karimattia.soli && xcrun simctl launch ...` fixes it immediately; restart the app BEFORE debugging the links themselves |
 | Signature mismatch on Android install | Check `SOLI_UPLOAD_*` in `.env` first — uninstalling wipes real history, last resort (section 4) |
+| Gradle fails in ~1 s with "Could not start 'node'" | Stale Gradle daemon caching a dead env: `cd android && ./gradlew --stop`, rerun |
+| iOS script phase fails: `<old Cellar path>/node: No such file or directory` | Gitignored `ios/.xcode.env.local` pins a brew-versioned node path that died on upgrade — set `NODE_BINARY=/opt/homebrew/bin/node` (stable symlink) |
 
 ## 9. Self-improvement
 

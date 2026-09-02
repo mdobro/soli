@@ -1,6 +1,6 @@
 # Agent Device Guide
 
-Last refreshed: 2026-07-06
+Last refreshed: 2026-07-17
 
 ## Scope
 
@@ -17,8 +17,11 @@ smoke results.
 
 ## Repository-controlled CLI
 
-- Package: `agent-device@0.18.3`, pinned exactly in `devDependencies`.
+- Package: `agent-device@0.19.3`, pinned exactly in `devDependencies`.
 - Invocation: `yarn agent-device <command>` from the repository root.
+- Soli's package script sets `AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS=0` so a
+  normal `close` retains the iOS XCTest runner instead of stopping it after five
+  idle minutes.
 - Upgrade by changing the exact dependency version and committing both
   `package.json` and `yarn.lock`.
 - Do not use a global installation or `npx` for Soli automation, because either can
@@ -26,7 +29,34 @@ smoke results.
 - The daemon and generated runner state remain machine-local under
   `~/.agent-device`; only the CLI package version is controlled by Git.
 - Yarn already exposes dependency binaries, so a duplicate package script is not
-  needed.
+  needed for resolution; Soli intentionally has one only to apply the iOS runner
+  retention workaround.
+
+## iOS 26.5 SpringBoard teardown workaround
+
+On this Mac, every recent SpringBoard crash has the same Apple frame,
+`XCTAutomationSession initWithAccessibilityFramework:dataSource:`, and the most
+recent reports occur about five minutes after the final agent-device command,
+when the default retained-runner idle timer fires. The app under test is not in
+the crashing stack.
+
+Keep the idle-stop override at `0`: agent-device documents that this disables the
+runner's automatic idle stop. Version 0.19.3 also lets an idle daemon exit while
+detaching a healthy simulator runner for later adoption. The trade-off is one
+long-lived XCTest runner per active simulator; Soli keeps one simulator, so this
+is preferable to repeated SpringBoard crash notifications. Forced runner
+shutdown, simulator shutdown, or handoff to Appium may still exercise Apple's
+faulty teardown path.
+
+Within one testing assignment, reuse a single named session for every command
+and close it only after the final verification. This reduces lifecycle churn even
+when runner retention is enabled.
+
+Sources refreshed 2026-07-17:
+
+- [agent-device v0.19.3 tag](https://github.com/callstack/agent-device/tree/v0.19.3)
+- [Daemon idle reaping and retained-runner handoff](https://github.com/callstack/agent-device/pull/1169)
+- Version-matched installed guidance: `yarn agent-device help workflow`
 
 ## Detailed guidance
 

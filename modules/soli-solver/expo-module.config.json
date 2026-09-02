@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["SoliSolverModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.solisolver.SoliSolverModule"]
+  }
+}

@@ -1,0 +1,18 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.solisolver'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.solisolver"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  // The Rust .so files live in src/main/jniLibs/<abi>/ (default AGP jniLibs
+  // source set — no extra config needed). They are produced by
+  // scripts/build-rust-solver.sh, NOT by this gradle build.
+}

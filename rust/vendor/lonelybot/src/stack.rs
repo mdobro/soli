@@ -1,0 +1,97 @@
+use crate::{
+    card::{Card, COLOR_MASK, N_RANKS, N_SUITS, SUIT_MASK},
+    utils::{full_mask, min},
+};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Stack(u16);
+
+impl Stack {
+    #[must_use]
+    const fn get_s(self) -> [u8; N_SUITS as usize] {
+        [self.get(0), self.get(1), self.get(2), self.get(3)]
+    }
+
+    #[must_use]
+    pub(crate) const fn mask(self) -> u64 {
+        let s = self.get_s();
+
+        (SUIT_MASK[0] & (0b1111 << (s[0] * 4)))
+            | (SUIT_MASK[1] & (0b1111 << (s[1] * 4)))
+            | (SUIT_MASK[2] & (0b1111 << (s[2] * 4)))
+            | (SUIT_MASK[3] & (0b1111 << (s[3] * 4)))
+    }
+
+    #[must_use]
+    pub(crate) const fn dominance_mask(self) -> u64 {
+        let s = self.get_s();
+        let d = (min(s[0], s[1]), min(s[2], s[3]));
+        let d = (min(d.0 + 1, d.1) + 2, min(d.0, d.1 + 1) + 2);
+
+        (COLOR_MASK[0] & full_mask(d.0 * 4)) | (COLOR_MASK[1] & full_mask(d.1 * 4))
+    }
+
+    // SOLI PATCH: mid-game constructor for the Soli app — number of cards already
+    // on each foundation, indexed by lonelybot suit order (0=♥ 1=♦ 2=♣ 3=♠).
+    #[must_use]
+    pub const fn from_counts(counts: [u8; N_SUITS as usize]) -> Self {
+        debug_assert!(
+            counts[0] <= N_RANKS && counts[1] <= N_RANKS && counts[2] <= N_RANKS && counts[3] <= N_RANKS
+        );
+        Self(
+            counts[0] as u16
+                | (counts[1] as u16) << 4
+                | (counts[2] as u16) << 8
+                | (counts[3] as u16) << 12,
+        )
+    }
+
+    pub(crate) fn push(&mut self, suit: u8) {
+        self.0 += 1 << (suit * 4);
+    }
+
+    pub(crate) fn pop(&mut self, suit: u8) {
+        self.0 -= 1 << (suit * 4);
+    }
+
+    #[must_use]
+    pub const fn get(self, suit: u8) -> u8 {
+        ((self.0 >> (4 * suit)) as u8) & 0xF
+    }
+
+    #[must_use]
+    pub const fn stackable(self, card: Card) -> bool {
+        self.get(card.suit()) == card.rank()
+    }
+
+    pub(crate) const fn is_valid(self) -> bool {
+        let s = self.get_s();
+        s[0] <= N_RANKS && s[1] <= N_RANKS && s[2] <= N_RANKS && s[3] <= N_RANKS
+    }
+
+    #[must_use]
+    pub const fn is_full(self) -> bool {
+        self.0 == (N_RANKS as u16 * 0x1111u16)
+    }
+
+    #[must_use]
+    pub const fn encode(self) -> u16 {
+        self.0
+    }
+
+    #[must_use]
+    pub(crate) const fn decode(encode: u16) -> Self {
+        Self(encode)
+    }
+
+    #[must_use]
+    pub const fn len(self) -> u8 {
+        let s = self.get_s();
+        s[0] + s[1] + s[2] + s[3]
+    }
+
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}

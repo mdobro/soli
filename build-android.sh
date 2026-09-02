@@ -139,6 +139,11 @@ fi
 
 apply_release_signing_patch
 
+# Rust solver artifacts are gitignored (hints plan doc, "Artifacts-in-git
+# decision 2026-07-23") — a stale/missing solver must never reach a Play
+# Store bundle. Rebuilds when rust/ changed; silent no-op when up to date.
+node scripts/ensure-rust-solver.js
+
 # Navigate to android directory and build.
 cd android
 echo "Building Android App Bundle..."

@@ -13,6 +13,11 @@ installation:
 yarn agent-device --version
 ```
 
+Soli's package script sets `AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS=0`. Keep this
+workaround: iOS 26.5 Simulator SpringBoard can crash when XCTest automation is
+torn down, so normal `close` must retain the healthy runner for later reuse.
+Avoid `close --shutdown` unless releasing XCTest is required for another tool.
+
 If that fails, run `yarn install` from the repository root. Do not fall back to a
 global install or `npx`, because that bypasses the version pinned in `yarn.lock`.
 

@@ -1,0 +1,72 @@
+# EAS upload manifest — mirrors .gitignore EXCEPT the Rust solver artifacts
+# (modules/soli-solver jniLibs + SoliSolver.xcframework + fingerprint), which
+# MUST upload: they are built locally by scripts/ensure-rust-solver.js and EAS
+# workers have no Rust toolchain. A root .easignore fully REPLACES .gitignore
+# for EAS archive filtering, so any .gitignore edit must be mirrored here.
+# `.env` must stay ignored (secrets). Known limitation: builds not started
+# from a machine with artifacts (e.g. EAS GitHub integration) fail loudly at
+# pod install/link on the missing framework — never a silently stale solver.
+# See docs/product/hints/hints-and-unwinnable-warning.md,
+# "Artifacts-in-git decision (2026-07-23)".
+
+expo-env.d.ts
+
+**/types/**/*.d.ts.map
+
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+.turbo
+
+.ultra.cache.json
+tmp
+*.tsbuildinfo
+*.tmp.js
+yarn-error.log
+dist
+tsconfig.tsbuildinfo
+node_modules
+**/_
+**/tests/spec/out
+.DS_Store
+.cursor/debug.log
+
+.next
+.vercel
+.tamagui
+.idea
+
+.env
+# local env files
+.env.local
+.env.development.local
+.env.test.localp
+.env.production.local
+
+.expo
+/ios
+/android
+
+# Local Expo modules: keep native sources tracked, ignore build outputs
+modules/**/android/build
+modules/**/android/.cxx
+modules/**/android/.gradle
+modules/**/android/.kotlin
+modules/**/ios/build
+modules/**/ios/Pods
+modules/**/ios/.symlinks
+modules/**/ios/DerivedData
+# Never commit keystore files
+*.keystore
+*.jks
+.venv
+scripts/android-unlock-pattern.sh
+
+# Agent test-run artifacts (screenshots, build logs)
+.test-artifacts/
+
+rust/target/

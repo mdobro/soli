@@ -1,0 +1,25 @@
+# SOLI PATCH: standalone manifest for the vendored copy. Upstream's Cargo.toml
+# is a workspace root (lonecli member, benches, local profiles, criterion
+# dev-dependency) — all stripped here so the crate builds inside the soli
+# workspace. Dependencies and their feature flags are unchanged.
+[package]
+name = "lonelybot"
+version = "0.2.3"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "lonelybot"
+path = "src/lib.rs"
+crate-type = ["lib"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+rand = { version = "0.10.1", default-features = false }
+rand_mt = "6.0.3"
+arrayvec = { version = "0.7.4", default-features = false }
+hashbrown = { version = "0.17", default-features = false }
+static_assertions = "1.1.0"
+uint = { version = "0.10", default-features = false }

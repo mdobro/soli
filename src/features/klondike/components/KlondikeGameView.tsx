@@ -8,6 +8,7 @@ import { FeltBackground } from './FeltBackground'
 import { TopRow, type TopRowProps } from './cards/TopRow'
 import { TableauSection, type TableauSectionProps } from './cards/TableauSection'
 import { AbsoluteCardLayer, type AbsoluteCardLayerProps } from './cards/AbsoluteCardLayer'
+import { HintOverlayLayer, type HintOverlayLayerProps } from './cards/HintOverlayLayer'
 import { CelebrationOverlayLayer } from './cards/CelebrationOverlayLayer'
 import { CelebrationTouchBlocker } from './cards/CelebrationTouchBlocker'
 import { CelebrationDebugBadge } from './CelebrationDebugBadge'
@@ -33,6 +34,7 @@ export type KlondikeGameViewProps = {
   onCelebrationBadgePress: () => void
   onCelebrationOverlayReady: () => void
   undoScrubProps: UndoScrubberProps
+  hintOverlayProps: HintOverlayLayerProps | null
   absoluteCardLayerProps: AbsoluteCardLayerProps | null
 }
 
@@ -51,6 +53,7 @@ export const KlondikeGameView: React.FC<KlondikeGameViewProps> = ({
   onCelebrationBadgePress,
   onCelebrationOverlayReady,
   undoScrubProps,
+  hintOverlayProps,
   absoluteCardLayerProps,
 }) => {
   const hasStats = statisticsRows.length > 0
@@ -96,6 +99,14 @@ export const KlondikeGameView: React.FC<KlondikeGameViewProps> = ({
         {absoluteCardLayerProps ? (
           <AbsoluteCardLayer {...absoluteCardLayerProps} />
         ) : null}
+
+        {/* Solver hint visuals (rings + ghost, all hint kinds). NOTE: sibling
+            order alone does NOT paint this above the cards — Fabric hoists the
+            card views into this shell and sorts them by zIndex, so the overlay
+            carries its own above-the-flight-band zIndex (F13; see
+            HINT_OVERLAY_Z_INDEX in HintOverlayLayer). pointerEvents-none
+            inside; null during normal play. */}
+        {hintOverlayProps ? <HintOverlayLayer {...hintOverlayProps} /> : null}
 
         <CelebrationOverlayLayer
           celebrationState={celebrationState}

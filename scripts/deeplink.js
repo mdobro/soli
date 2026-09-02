@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * `yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry]`
+ * `yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry] [--screenshot]`
  *
  * Generic delivery wrapper for the Soli deep-link test hooks, plus named
  * shortcuts (yarn celebration / scrubtest / nearwin / seedhistory). It encodes
@@ -25,8 +25,9 @@ const PACKAGE_NAME = 'ch.karimattia.soli'
 const UNLOCK_SCRIPT = path.join(__dirname, 'android-unlock-pattern.sh')
 const ANDROID_READY_SCRIPT = path.join(__dirname, 'android-ready.sh')
 const USAGE =
-  "Usage: yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry]\n" +
-  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · seedhistory [clear]'
+  "Usage: yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry] [--screenshot]\n" +
+  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · seedhistory [clear]\n' +
+  '--screenshot appends screenshot=1 (store-screenshot mode: dev mode forced OFF, no Demo button / celebration badge)'
 
 // Fixture shortcuts (scrubtest/nearwin) force-stop by DEFAULT: a stale demo
 // playlist still running in the warm app can overwrite the fixture you just
@@ -70,6 +71,7 @@ const parseArgs = () => {
     target: null, // null = auto (android device > booted sim; see header)
     serial: null,
     retry: true,
+    screenshot: false,
   }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -83,6 +85,8 @@ const parseArgs = () => {
       options.target = 'ios'
     } else if (arg === '--no-retry') {
       options.retry = false
+    } else if (arg === '--screenshot') {
+      options.screenshot = true
     } else if (arg === '--serial') {
       index += 1
       options.serial = args[index] || fail('--serial needs a value.')
@@ -164,7 +168,17 @@ const resolveAndroidSerial = (explicit) => {
 
 const main = () => {
   const options = parseArgs()
-  const { url: baseUrl, cold } = resolveUrlAndCold(options)
+  const { url: resolvedUrl, cold } = resolveUrlAndCold(options)
+  // Screenshot mode (store-screenshots round 2): the in-app handler forces dev
+  // mode OFF for links carrying screenshot=1 — no Demo button, no celebration
+  // badge. Inserted before any #fragment so the param lands in the query.
+  const baseUrl = options.screenshot
+    ? (() => {
+        const [queryPart, hashPart] = resolvedUrl.split('#')
+        const withParam = `${queryPart}${queryPart.includes('?') ? '&' : '?'}screenshot=1`
+        return hashPart ? `${withParam}#${hashPart}` : withParam
+      })()
+    : resolvedUrl
   // Auto nonce unless the caller already controls the fragment or wants dedup.
   const url =
     options.retry && !baseUrl.includes('#')

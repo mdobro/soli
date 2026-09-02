@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["vendor/lonelybot", "soli-solver-ffi"]
+
+# lto = true mirrors upstream lonelybot's release profile (the solver is very
+# hot-loop heavy) and shrinks the mobile artifacts. Keep panic = "unwind"
+# (default): the FFI relies on catch_unwind at the C boundary.
+[profile.release]
+lto = true
+strip = "symbols"
+
+# Optimize the solver even in dev/test builds: lonelybot's DFS is orders of
+# magnitude slower unoptimized, which would make the equivalence/replay tests
+# crawl. debug_assert!s stay active (dev profile keeps debug-assertions on).
+[profile.dev.package.lonelybot]
+opt-level = 3

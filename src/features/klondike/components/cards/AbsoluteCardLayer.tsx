@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated as NativeAnimated, Pressable, StyleSheet, View } from 'react-native'
-import type { LayoutRectangle, StyleProp, ViewStyle } from 'react-native'
+import type { StyleProp, ViewStyle } from 'react-native'
 
 import {
   FOUNDATION_SUIT_ORDER,
-  TABLEAU_COLUMN_COUNT,
   type Card,
   type Foundations,
   type Suit,
@@ -17,7 +16,13 @@ import {
   WIGGLE_OFFSET_PX,
   WIGGLE_SEGMENT_DURATION_MS,
 } from '../../constants'
-import { computeTableauStackOffsets, computeWasteFanGeometry } from './utils'
+import {
+  computeTableauStackOffsets,
+  computeWasteFanGeometry,
+  resolveTableauPosition,
+  resolveTopRowPosition,
+  type AbsoluteCardLayerLayouts,
+} from './utils'
 import type { CardMetrics, InvalidWiggleConfig } from '../../types'
 import {
   getCardTestID,
@@ -37,23 +42,13 @@ import { styles as cardStyles } from './styles'
 // a slightly stronger invalid feedback offset to keep the motion readable on device.
 const ABSOLUTE_LAYER_WIGGLE_OFFSET_PX = Math.max(8, WIGGLE_OFFSET_PX * 1.6)
 
-export type AbsoluteCardLayerLayouts = {
-  topRow: LayoutRectangle | null
-  stock: LayoutRectangle | null
-  waste: LayoutRectangle | null
-  foundations: Partial<Record<Suit, LayoutRectangle>>
-  tableauRow: LayoutRectangle | null
-  tableauColumns: Array<LayoutRectangle | null>
-}
-
-export const createEmptyAbsoluteCardLayerLayouts = (): AbsoluteCardLayerLayouts => ({
-  topRow: null,
-  stock: null,
-  waste: null,
-  foundations: {},
-  tableauRow: null,
-  tableauColumns: Array.from({ length: TABLEAU_COLUMN_COUNT }, () => null),
-})
+// Layouts type + creator + slot-position resolvers moved to ./utils (pure
+// geometry, jest-importable without this component's tamagui-heavy imports);
+// re-exported here so existing consumers keep one canonical import site.
+export {
+  createEmptyAbsoluteCardLayerLayouts,
+  type AbsoluteCardLayerLayouts,
+} from './utils'
 
 export type AbsoluteCardLayerProps = {
   // Perf (A2): pile slices instead of the full GameState so React.memo on this layer
@@ -103,34 +98,6 @@ type WasteTapTarget = {
   x: number
   y: number
   accessibilityLabel: string
-}
-
-const resolveTopRowPosition = (
-  topRow: LayoutRectangle | null,
-  slot: LayoutRectangle | null
-): { x: number; y: number } | null => {
-  if (!topRow || !slot) {
-    return null
-  }
-
-  return {
-    x: topRow.x + slot.x,
-    y: topRow.y + slot.y,
-  }
-}
-
-const resolveTableauPosition = (
-  tableauRow: LayoutRectangle | null,
-  column: LayoutRectangle | null
-): { x: number; y: number } | null => {
-  if (!tableauRow || !column) {
-    return null
-  }
-
-  return {
-    x: tableauRow.x + column.x,
-    y: tableauRow.y + column.y,
-  }
 }
 
 const resolveWasteTapTarget = ({
@@ -646,6 +613,8 @@ const AbsoluteLayerCard = React.memo(
         // flight would otherwise carry the *destination* zIndex un-boosted. For moves to
         // a lower z (tableau -> foundation, right column -> left column) that made the
         // flight start behind other columns' cards, visible on slow devices/simulators.
+        // Hint visuals rely on sitting ABOVE this flight band (F13): keep the boost
+        // below HINT_OVERLAY_Z_INDEX in HintOverlayLayer.
         zIndex:
           isSettling || targetChangedBeforeEffect ? 10000 + item.zIndex : item.zIndex,
         transform: [

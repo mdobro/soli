@@ -6012,14 +6012,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"agent-device@npm:0.19.0":
-  version: 0.19.0
-  resolution: "agent-device@npm:0.19.0"
+"agent-device@npm:0.19.3":
+  version: 0.19.3
+  resolution: "agent-device@npm:0.19.3"
   dependencies:
     yaml: "npm:^2.9.0"
   bin:
     agent-device: bin/agent-device.mjs
-  checksum: 10/0c57a42cb9621ee217c82c99a9d24c41defbfbc460cdb4702f16a77e2551138a2d7748820d1bc75955f5442bd37b5ede29eafc9283f3c7486f0c5928e38a64a6
+  checksum: 10/e9bcc7d1212586b8a7c337ec4ec159150fe1ed6b7e9ba39be9504c0c30f3b78503160c8ff738dd89a36b03dd72543490d107faa5ef944d657da61b810283385e
   languageName: node
   linkType: hard
 
@@ -12701,7 +12701,7 @@ __metadata:
     "@tamagui/native": "npm:2.4.2"
     "@types/jest": "npm:29.5.14"
     "@types/react": "npm:^19.2.17"
-    agent-device: "npm:0.19.0"
+    agent-device: "npm:0.19.3"
     babel-preset-expo: "npm:~57.0.2"
     expo: "npm:~57.0.4"
     expo-constants: "npm:~57.0.3"

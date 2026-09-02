@@ -1,0 +1,21 @@
+[package]
+name = "soli-solver-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "soli_solver_ffi"
+# cdylib → Android .so, staticlib → iOS .a, rlib → tests/examples/Phase-B reuse.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+lonelybot = { path = "../vendor/lonelybot" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# JNI-named export for the Kotlin module (src/android_jni.rs). default-features
+# off: we only need the type wrappers, not the JVM "invocation" machinery.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", default-features = false }

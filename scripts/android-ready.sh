@@ -16,6 +16,20 @@
 
 set -euo pipefail
 
+# Cross-repo device lock (see soli-testing SKILL.md): the invent repo's agents
+# share this phone. A fresh foreign lock means the device is taken — abort
+# instead of hijacking mid-test (this bit invent's agents repeatedly on 09.07).
+DEVICE_LOCK="/tmp/android-device.lock"
+if [[ -z "${ANDROID_LOCK_BYPASS:-}" && -f "${DEVICE_LOCK}" ]]; then
+  lock_age=$(( $(date +%s) - $(stat -f %m "${DEVICE_LOCK}" 2>/dev/null || echo 0) ))
+  lock_owner="$(cat "${DEVICE_LOCK}" 2>/dev/null || echo unknown)"
+  if [[ "${lock_age}" -lt 3600 && "${lock_owner}" != soli:* ]]; then
+    echo "android-ready: device locked by '${lock_owner}' (${lock_age}s ago) — wait, use --ios, or ANDROID_LOCK_BYPASS=1 if Karim approves." >&2
+    exit 75
+  fi
+fi
+printf 'soli:%s:%s' "${USER:-agent}" "$(date +%s)" > "${DEVICE_LOCK}"
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNLOCK_SCRIPT="${ROOT_DIR}/scripts/android-unlock-pattern.sh"
 # Matches TEMP_SCREEN_OFF_TIMEOUT_MS used by --auto-solve in build-install-android.js.

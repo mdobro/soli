@@ -8,10 +8,13 @@ import {
   HeaderMenuButton,
   HEADER_MENU_LEADING_PADDING,
 } from '../../components/navigation/HeaderMenuButton'
+import { DescribedSwitchRow } from '../../components/settings/DescribedSwitchRow'
 import { DrawCountPreference } from '../../components/settings/DrawCountPreference'
+import { WarningModePreference } from '../../components/settings/WarningModePreference'
 import { useDrawerOpener } from '../../src/navigation/useDrawerOpener'
 import {
   animationPreferenceDescriptors,
+  hintButtonPreference,
   statisticsPreferenceDescriptors,
   useSettings,
 } from '../../src/state/settings'
@@ -26,6 +29,8 @@ export default function SettingsScreen() {
     setDrawCount,
     setSolvableGamesOnly,
     setAutoUpEnabled,
+    setWarningMode,
+    setHintButtonEnabled,
     setDeveloperMode,
     setStatisticsPreference,
   } = useSettings()
@@ -70,6 +75,21 @@ export default function SettingsScreen() {
               label="Auto Up"
               value={state.autoUpEnabled}
               onValueChange={setAutoUpEnabled}
+            />
+            {/* Hint/warning rows carry a description (unlike the plain label
+                switches above): both features change gameplay in ways the
+                labels alone can't carry. The warning modes are ONE select
+                (F14) — they form a strictness ladder, not independent
+                features. */}
+            <DescribedSwitchRow
+              label={hintButtonPreference.label}
+              description={hintButtonPreference.description}
+              value={state.hints.hintButton}
+              onValueChange={setHintButtonEnabled}
+            />
+            <WarningModePreference
+              value={state.hints.warningMode}
+              onValueChange={setWarningMode}
             />
           </FieldGroup.Section>
 

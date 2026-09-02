@@ -61,6 +61,13 @@ export const COLOR_CARD_BACK = '#3b4d75'
 export const COLOR_CARD_BORDER = '#cbd5f5'
 export const COLOR_SELECTED_BORDER = '#c084fc'
 export const COLOR_DROP_BORDER = '#22a06b'
+// Hint highlight (hints plan F8, 2026-07-23): amber on purpose, NOT the
+// drop-border green — the green hint rings blended into the felt (user:
+// "honestly quite hard to see", even read as blue). Amber holds contrast on
+// BOTH the green felt and white card faces; a pure yellow (e.g.
+// FOUNDATION_GLOW_COLOR, tamagui $yellow) washes out on white faces. Board
+// visuals use this hex palette rather than tamagui tokens, so this lives here.
+export const COLOR_HINT = '#FFB020'
 export const COLOR_COLUMN_BORDER = '#d0d5dd'
 export const COLOR_COLUMN_SELECTED = 'rgba(147, 197, 253, 0.25)'
 export const COLOR_FOUNDATION_BORDER = '#94a3b8'

@@ -36,6 +36,7 @@ const {
   createLauncher,
   createLogMonitor,
 } = require('./lib/build-tools')
+const { ensureRustSolverArtifacts } = require('./ensure-rust-solver')
 
 const BASE_APP_URI = 'soli:///'
 
@@ -169,6 +170,12 @@ const main = async () => {
   acquireBuildLock()
   await preflightKillCompetingBuilds()
   loadReleaseSigningEnv()
+
+  // Rust solver artifacts are gitignored (hints plan doc, "Artifacts-in-git
+  // decision 2026-07-23") — rebuild when rust/ changed or a fresh clone has
+  // none. After the lock on purpose: two entries must never cargo-build
+  // concurrently. Silent no-op (<1 s) when everything matches.
+  ensureRustSolverArtifacts()
 
   // run-android-release.sh exports ANDROID_SERIAL after wireless discovery;
   // ensureDevice() is the fallback when this entry is run directly.

@@ -26,7 +26,9 @@ export const TABLEAU_COLUMN_COUNT = 7
 const MAX_AUTO_COMPLETE_ITERATIONS = 500
 
 const ACE_RANK = 1
-const KING_RANK = 13
+// Exported for usefulMoves.ts (classic stuck heuristic, F11): king-based runs
+// with nothing beneath are excluded from "useful" tableau moves there.
+export const KING_RANK = 13
 const TOTAL_CARDS_PER_SUIT = 13
 const RED_SUITS = new Set(['hearts', 'diamonds'])
 let deckInstanceCounter = 0
@@ -930,7 +932,10 @@ const flipNewTopCard = (column: TableauColumn) => {
   }
 }
 
-const canDropOnTableau = (column: TableauColumn, stack: Card[]): boolean => {
+// Exported (F11) so usefulMoves.ts shares the exact same placement rules as
+// the reducer — a drifted reimplementation there would make the stuck warning
+// silently wrong about legality.
+export const canDropOnTableau = (column: TableauColumn, stack: Card[]): boolean => {
   if (!stack.length || !isDescendingAlternating(stack)) {
     return false
   }
@@ -947,7 +952,8 @@ const canDropOnTableau = (column: TableauColumn, stack: Card[]): boolean => {
   )
 }
 
-const canDropOnFoundation = (card: Card, pile: Card[], suit: Suit): boolean => {
+// Exported (F11) for usefulMoves.ts — see canDropOnTableau note above.
+export const canDropOnFoundation = (card: Card, pile: Card[], suit: Suit): boolean => {
   if (card.suit !== suit) {
     return false
   }

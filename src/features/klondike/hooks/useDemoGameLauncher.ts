@@ -10,6 +10,7 @@ import {
   type Suit,
 } from '../../../solitaire/klondike'
 import { isDrawCount, type DrawCount } from '../../../solitaire/drawCount'
+import type { WarningMode } from '../../../state/settings'
 import { isExactDealId, parseExactDealId } from '../../../solitaire/dealIdentity'
 import type { ExactDealId } from '../../../solitaire/dealIdentity'
 import { CELEBRATION_MODE_METADATA } from '../../../animation/celebrationModes'
@@ -61,6 +62,10 @@ type UseDemoGameLauncherOptions = {
   setDrawCount: (drawCount: DrawCount) => void
   setAutoUpEnabled: (enabled: boolean) => void
   setSolvableGamesOnly: (enabled: boolean) => void
+  // Functional form: the warning-link aliases resolve relative to the current
+  // mode (see resolveWarningLinkUpdate).
+  setWarningMode: (mode: WarningMode | ((current: WarningMode) => WarningMode)) => void
+  setHintButtonEnabled: (enabled: boolean) => void
   resetUndoHintForTesting: () => void
   dealNewGameForTesting: () => void
   startGameFromExactDeal: (exactId: ExactDealId, drawCount?: DrawCount) => void
@@ -126,15 +131,65 @@ const parseOptionalIntParam = (value: string | null): number | undefined => {
 // C1 (?set=drawCount:3,autoUp:off,solvableOnly:on): pure parser, exported for
 // unit tests. Unknown keys/values land in ignoredPairs (the caller devLogs them
 // and applies the rest).
+//
+// Warning-mode links (F14): the canonical key is `warnings:off|stuck|
+// unwinnable` (stuck → 'noUsefulMoves'). The round-2 boolean keys stay as
+// ALIASES so existing scripts/muscle memory keep working, but they resolve
+// relative to the current mode (an alias must not silently downgrade a
+// stronger mode) — hence they are collected as semantic updates in link order
+// and applied through resolveWarningLinkUpdate.
+export type WarningLinkUpdate =
+  | { set: WarningMode }
+  | { alias: 'stuck' | 'unwinnable'; enabled: boolean }
+
 export type SettingsLinkUpdates = {
   drawCount?: DrawCount
   autoUp?: boolean
   solvableOnly?: boolean
+  hintButton?: boolean
+  warningUpdates: WarningLinkUpdate[]
   ignoredPairs: string[]
 }
 
+// Pure alias semantics (exported for unit tests):
+// - `warnings:<mode>` sets the mode outright.
+// - `unwinnableWarning:on` → 'unwinnable' (strongest, always wins);
+//   `unwinnableWarning:off` steps back down to the default classic warning
+//   when unwinnable was active, otherwise leaves the mode alone.
+// - `stuckWarning:on` → 'noUsefulMoves' UNLESS the mode is already
+//   'unwinnable' (round-2 semantics: enabling the weak warning never turned
+//   the strong one off); `stuckWarning:off` turns 'noUsefulMoves' off,
+//   otherwise leaves the mode alone.
+export const resolveWarningLinkUpdate = (
+  current: WarningMode,
+  update: WarningLinkUpdate
+): WarningMode => {
+  if ('set' in update) {
+    return update.set
+  }
+  if (update.alias === 'unwinnable') {
+    if (update.enabled) {
+      return 'unwinnable'
+    }
+    return current === 'unwinnable' ? 'noUsefulMoves' : current
+  }
+  if (update.enabled) {
+    return current === 'unwinnable' ? current : 'noUsefulMoves'
+  }
+  return current === 'noUsefulMoves' ? 'off' : current
+}
+
+// `warnings:` values → modes. `stuck` is the link-friendly spelling;
+// `nousefulmoves` is accepted so the setting's real key also works.
+const WARNING_MODE_LINK_VALUES: Record<string, WarningMode> = {
+  off: 'off',
+  stuck: 'noUsefulMoves',
+  nousefulmoves: 'noUsefulMoves',
+  unwinnable: 'unwinnable',
+}
+
 export const parseSettingsLinkParam = (raw: string): SettingsLinkUpdates => {
-  const updates: SettingsLinkUpdates = { ignoredPairs: [] }
+  const updates: SettingsLinkUpdates = { warningUpdates: [], ignoredPairs: [] }
 
   raw.split(',').forEach((pair) => {
     const trimmed = pair.trim()
@@ -161,6 +216,29 @@ export const parseSettingsLinkParam = (raw: string): SettingsLinkUpdates => {
         } else {
           updates.solvableOnly = parsed
         }
+        return
+      }
+    } else if (key === 'hintbutton' || key === 'hints') {
+      // `hints` stays as an alias for the Hint button: the pre-F11
+      // single-setting link name, kept for muscle memory / old scripts.
+      const parsed = parseOptionalBooleanParam(value)
+      if (parsed !== null) {
+        updates.hintButton = parsed
+        return
+      }
+    } else if (key === 'warnings') {
+      const mode = WARNING_MODE_LINK_VALUES[(value ?? '').toLowerCase()]
+      if (mode !== undefined) {
+        updates.warningUpdates.push({ set: mode })
+        return
+      }
+    } else if (key === 'stuckwarning' || key === 'unwinnablewarning') {
+      const parsed = parseOptionalBooleanParam(value)
+      if (parsed !== null) {
+        updates.warningUpdates.push({
+          alias: key === 'stuckwarning' ? 'stuck' : 'unwinnable',
+          enabled: parsed,
+        })
         return
       }
     }
@@ -192,6 +270,8 @@ export const useDemoGameLauncher = ({
   setDrawCount,
   setAutoUpEnabled,
   setSolvableGamesOnly,
+  setWarningMode,
+  setHintButtonEnabled,
   resetUndoHintForTesting,
   dealNewGameForTesting,
   startGameFromExactDeal,
@@ -815,10 +895,20 @@ export const useDemoGameLauncher = ({
         if (updates.solvableOnly !== undefined) {
           setSolvableGamesOnly(updates.solvableOnly)
         }
+        if (updates.hintButton !== undefined) {
+          setHintButtonEnabled(updates.hintButton)
+        }
+        // Applied in link order through the functional setter so alias
+        // semantics see the mode as earlier pairs left it.
+        for (const update of updates.warningUpdates) {
+          setWarningMode((current) => resolveWarningLinkUpdate(current, update))
+        }
         devLog('info', '[Demo] Settings link applied', {
           drawCount: updates.drawCount,
           autoUp: updates.autoUp,
           solvableOnly: updates.solvableOnly,
+          hintButton: updates.hintButton,
+          warningUpdates: updates.warningUpdates,
         })
         return
       }
@@ -1049,6 +1139,8 @@ export const useDemoGameLauncher = ({
       setAutoUpEnabled,
       setDeveloperMode,
       setDrawCount,
+      setWarningMode,
+      setHintButtonEnabled,
       setSolvableGamesOnly,
       startGameFromExactDeal,
       startCelebrationPreview,

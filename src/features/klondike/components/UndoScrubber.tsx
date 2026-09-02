@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react'
-import { type LayoutChangeEvent, StyleSheet, View, Text } from 'react-native'
+import { type LayoutChangeEvent, Pressable, StyleSheet, View, Text } from 'react-native'
 import Animated, {
   createAnimatedComponent,
   useAnimatedStyle,
@@ -8,7 +8,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated'
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler'
-import { Undo2 } from '@tamagui/lucide-icons-2'
+import { Lightbulb, Undo2 } from '@tamagui/lucide-icons-2'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import {
@@ -18,6 +18,7 @@ import {
   UNDO_SCRUBBER_SAFE_AREA_BOTTOM_PADDING,
 } from '../constants'
 import { UndoHintBubble } from './UndoHintBubble'
+import { GameNoticeBubble } from './GameNoticeBubble'
 
 export type UndoScrubberProps = {
   visible: boolean
@@ -32,6 +33,17 @@ export type UndoScrubberProps = {
   onTrackMetrics: (metrics: { left: number; right: number }) => void
   // One-time undo-scrubber discovery hint (undo-scrubber-hint plan).
   hintVisible: boolean
+  // Hint features (hints-and-unwinnable-warning plan). hintButtonVisible
+  // follows the "Hint button" setting; hintBubbleText carries whichever
+  // notice/warning is active (see GameNoticeBubble; warnings persist for the
+  // whole dead era since F14); warningEmphasisNonce replays the bubble's
+  // emphasis pulse (warning fire + hint-press re-affirm). With the button off
+  // and warnings off all three are inert → this component renders exactly the
+  // pre-feature layout.
+  hintButtonVisible: boolean
+  onHintPress: () => void
+  hintBubbleText: string | null
+  warningEmphasisNonce: number
 }
 
 const AnimatedView = createAnimatedComponent(View)
@@ -104,6 +116,10 @@ export const UndoScrubber = React.memo(
     canUndo,
     onTrackMetrics,
     hintVisible,
+    hintButtonVisible,
+    onHintPress,
+    hintBubbleText,
+    warningEmphasisNonce,
   }: UndoScrubberProps) => {
     const trackRef = useRef<View>(null)
     const trackWidth = useSharedValue(0)
@@ -231,6 +247,41 @@ export const UndoScrubber = React.memo(
           visible={hintVisible}
           bottom={bottomDockOffset + UNDO_BUTTON_HEIGHT + 8}
         />
+        {/* Hint/warning notices anchor above the dock like the undo discovery
+          hint (one bubble for all texts — see GameNoticeBubble). */}
+        <GameNoticeBubble
+          text={hintBubbleText}
+          bottom={bottomDockOffset + UNDO_BUTTON_HEIGHT + 8}
+          emphasisNonce={warningEmphasisNonce}
+        />
+        {hintButtonVisible ? (
+          // Plain RN Pressable, deliberately OUTSIDE the GestureWrapper/pan
+          // area (Tamagui/expo-ui buttons conflict with the pan gesture — see
+          // GestureWrapper). Mirrors the Undo pill in the left half of the dock
+          // (same metrics as DemoPlaylistHud, which may overlap during
+          // dev-only demo playback — accepted). Note the pan gesture's
+          // hitSlop extends 20px left of the Undo button, slightly over this
+          // button's right edge: a plain tap there still hits this Pressable
+          // (the pan needs 5px of horizontal movement to activate).
+          //
+          // No busy/disabled state on purpose (user feedback 2026-07-23:
+          // flicker = no-go): a hintDisabled prop driven by solver-busy state
+          // used to dim this button for 1-2 frames around every background
+          // solve after each move. The button is now visually static; presses
+          // during an in-flight solve are absorbed by useHint's replace-latest
+          // queue. This subtree re-renders per move anyway (historyIndex in the
+          // dock), but renders an identical element tree — no native update.
+          <Pressable
+            style={[styles.hintButton, { bottom: bottomDockOffset }]}
+            onPress={onHintPress}
+            accessibilityRole="button"
+            accessibilityLabel="Hint"
+            testID="hint-button"
+          >
+            <Lightbulb size={20} color="#000" />
+            <Text style={styles.undoButtonText}>Hint</Text>
+          </Pressable>
+        ) : null}
         <GestureWrapper gesture={gesture} scrubActive={scrubActive} canUndo={canUndo} />
       </View>
     )
@@ -305,6 +356,24 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: '50%',
     alignSelf: 'flex-end',
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  // Left-half twin of undoButton (absolute so the in-flow undo layout — and
+  // therefore the setting-off render — is untouched); 8px gap like
+  // DemoPlaylistHud's marginRight.
+  hintButton: {
+    position: 'absolute',
+    left: 0,
+    right: '50%',
+    marginRight: 8,
     zIndex: 2,
     flexDirection: 'row',
     alignItems: 'center',

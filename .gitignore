@@ -65,3 +65,14 @@ scripts/android-unlock-pattern.sh
 
 # Agent test-run artifacts (screenshots, build logs)
 .test-artifacts/
+
+rust/target/
+
+# Rust solver build outputs — derived from rust/ by scripts/build-rust-solver.sh.
+# Deliberately NOT committed (see hints doc "Artifacts-in-git decision 2026-07-23");
+# scripts/ensure-rust-solver.js rebuilds them per fingerprint in every build path.
+# NOTE: any other .gitignore edit must be mirrored in .easignore (which replaces
+# this file for EAS uploads and must keep these artifact lines OUT).
+modules/soli-solver/android/src/main/jniLibs/
+modules/soli-solver/ios/SoliSolver.xcframework/
+modules/soli-solver/.artifacts-fingerprint.json

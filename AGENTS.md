@@ -14,7 +14,7 @@
 ## About the codebase
 
 - Native-only Expo/React Native solitaire app.
-- Game logic lives in src/features/klondike/
+- Pure game engine (reducer, rules, deal identity) in src/solitaire/; Klondike UI/hooks in src/features/klondike/
 - Shared components in components/
 - Implementation plans in docs/product/<feature>/
 - Package guides in docs/external-package-guides/

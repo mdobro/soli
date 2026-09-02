@@ -37,11 +37,30 @@ type StatisticsPreferences = {
 
 export type StatisticsPreferenceKey = keyof StatisticsPreferences
 
+// Warning model (hints plan, F14, 2026-07-24): ONE select instead of the two
+// F11 warning toggles. The two warnings are a strictness ladder (the classic
+// stuck warning is already solver-confirmed; the unwinnable warning is a
+// strict superset that fires earlier), so independent booleans misled — user
+// feedback 2026-07-24. 'noUsefulMoves' is the genre-norm default.
+export const WARNING_MODES = ['off', 'noUsefulMoves', 'unwinnable'] as const
+export type WarningMode = (typeof WARNING_MODES)[number]
+
+type HintPreferences = {
+  // - 'off': never warn proactively.
+  // - 'noUsefulMoves': classic Microsoft-style warning at the fruitless
+  //   recycle-flip (heuristic + solver confirmation).
+  // - 'unwinnable': solver-proven "can't be won anymore" the moment it
+  //   happens — changes how the game plays (you undo the moment it appears).
+  warningMode: WarningMode
+  hintButton: boolean
+}
+
 export type SettingsState = {
   animations: AnimationPreferences
   drawCount: DrawCount
   solvableGamesOnly: boolean
   autoUpEnabled: boolean
+  hints: HintPreferences
   developerMode: boolean
   statistics: StatisticsPreferences
 }
@@ -53,6 +72,11 @@ type SettingsContextValue = {
   setAnimationPreference: (key: AnimationPreferenceKey, enabled: boolean) => void
   setSolvableGamesOnly: (enabled: boolean) => void
   setAutoUpEnabled: (enabled: boolean) => void
+  // Functional updates supported because the ?set= deep-link aliases resolve
+  // relative to the current mode (see resolveWarningLinkUpdate in
+  // useDemoGameLauncher).
+  setWarningMode: (mode: WarningMode | ((current: WarningMode) => WarningMode)) => void
+  setHintButtonEnabled: (enabled: boolean) => void
   setDeveloperMode: (enabled: boolean) => void
   setStatisticsPreference: (key: StatisticsPreferenceKey, enabled: boolean) => void
 }
@@ -62,7 +86,8 @@ type SettingsContextValue = {
 // only pre-release test devices lose (re-defaultable) settings once.
 const STORAGE_KEY = 'soli/settings/v1'
 
-const DEFAULT_SETTINGS: SettingsState = {
+// Exported for unit tests (defaults + legacy-key migration coverage).
+export const DEFAULT_SETTINGS: SettingsState = {
   animations: {
     master: true,
     cardFlights: true,
@@ -75,6 +100,10 @@ const DEFAULT_SETTINGS: SettingsState = {
   drawCount: DEFAULT_DRAW_COUNT,
   solvableGamesOnly: true,
   autoUpEnabled: true,
+  hints: {
+    warningMode: 'noUsefulMoves',
+    hintButton: false,
+  },
   developerMode: false,
   statistics: {
     showMoves: true,
@@ -118,6 +147,31 @@ export const animationPreferenceDescriptors: Array<{
     description: 'Play the victory sequence after completing a game.',
   },
 ]
+
+// Settings-screen copy for the hint/warning features. Unlike the animation/
+// statistics descriptors (whose descriptions are currently unrendered), these
+// ARE shown as row subtitles — both features change gameplay in ways the
+// labels alone can't carry (user feedback 2026-07-23).
+export const hintButtonPreference = {
+  label: 'Hint button',
+  description: 'Show a Hint button that reveals the next move.',
+}
+
+export const warningModePreference: {
+  label: string
+  description: string
+  options: Array<{ value: WarningMode; label: string }>
+} = {
+  label: 'Warnings',
+  // One line explaining the strictness ladder between the two modes.
+  description:
+    "Warn when you run out of useful moves, or as soon as the game can't be won anymore.",
+  options: [
+    { value: 'off', label: 'Off' },
+    { value: 'noUsefulMoves', label: 'No more useful moves' },
+    { value: 'unwinnable', label: 'Unwinnable game' },
+  ],
+}
 
 export const statisticsPreferenceDescriptors: Array<{
   key: StatisticsPreferenceKey
@@ -238,6 +292,27 @@ export const SettingsProvider = ({ children }: PropsWithChildren) => {
     )
   }, [])
 
+  const setWarningMode = useCallback(
+    (mode: WarningMode | ((current: WarningMode) => WarningMode)) => {
+      setState((previous) => {
+        const next =
+          typeof mode === 'function' ? mode(previous.hints.warningMode) : mode
+        return previous.hints.warningMode === next
+          ? previous
+          : { ...previous, hints: { ...previous.hints, warningMode: next } }
+      })
+    },
+    []
+  )
+
+  const setHintButtonEnabled = useCallback((enabled: boolean) => {
+    setState((previous) =>
+      previous.hints.hintButton === enabled
+        ? previous
+        : { ...previous, hints: { ...previous.hints, hintButton: enabled } }
+    )
+  }, [])
+
   // Developer logging is synced by the state.developerMode effect below (which also
   // covers the hydrated-from-storage value), so no direct call here.
   const setDeveloperMode = useCallback((enabled: boolean) => {
@@ -279,6 +354,8 @@ export const SettingsProvider = ({ children }: PropsWithChildren) => {
       setAnimationPreference,
       setSolvableGamesOnly,
       setAutoUpEnabled,
+      setWarningMode,
+      setHintButtonEnabled,
       setDeveloperMode,
       setStatisticsPreference,
     }),
@@ -287,6 +364,8 @@ export const SettingsProvider = ({ children }: PropsWithChildren) => {
       setGlobalAnimationsEnabled,
       setStatisticsPreference,
       setAutoUpEnabled,
+      setWarningMode,
+      setHintButtonEnabled,
       setSolvableGamesOnly,
       setDrawCount,
       setDeveloperMode,
@@ -327,7 +406,9 @@ export function useAnimationToggles(): AnimationPreferences {
   }, [animations])
 }
 
-const mergeSettings = (
+// Exported for unit tests (defaults + migration assertions run on the pure
+// merge, not through the provider).
+export const mergeSettings = (
   current: SettingsState,
   incoming?: Partial<SettingsState>
 ): SettingsState => {
@@ -337,6 +418,51 @@ const mergeSettings = (
 
   const animations: Partial<AnimationPreferences> = incoming.animations ?? {}
   const statistics: Partial<StatisticsPreferences> = incoming.statistics ?? {}
+  // Round-2 (F11) payloads stored two warning booleans where F14's single
+  // warningMode now lives; the cast surfaces them for the migration below.
+  const hints: Partial<HintPreferences> & {
+    stuckWarning?: unknown
+    unwinnableWarning?: unknown
+  } = incoming.hints ?? {}
+  // Legacy migration (F11, 2026-07-23): the removed single `hintsEnabled`
+  // gated the Hint button AND the unwinnable warning, so a stored true maps to
+  // both features once. Read straight off the parsed payload during the merge
+  // (cheapest possible migration — population is one dev device); the next
+  // settings write persists the new shape and the stale key simply stops
+  // being read. Explicit newer-shape values always win below.
+  const legacyHintsEnabled = getBoolean(
+    (incoming as { hintsEnabled?: unknown }).hintsEnabled,
+    false
+  )
+
+  // Warning-mode migration chain (F14, 2026-07-24) — newest shape wins:
+  //   1. explicit `hints.warningMode` (current shape, validated against the
+  //      union — junk strings fall through);
+  //   2. round-2 booleans {stuckWarning, unwinnableWarning} (F11 shape):
+  //      unwinnable=true → 'unwinnable'; else stuck=true → 'noUsefulMoves';
+  //      both false → 'off'. Keys absent from a partial payload resolve to
+  //      their F11 defaults (stuck ON, unwinnable OFF) so the ladder lands
+  //      faithfully;
+  //   3. pre-F11 `hintsEnabled:true` (single toggle) mapped to button +
+  //      unwinnable warning in F11, so it feeds step 2's unwinnable input and
+  //      lands on 'unwinnable' — the even-older chain still resolves right;
+  //   4. nothing hint-related stored → keep current (default 'noUsefulMoves').
+  const warningMode: WarningMode = (() => {
+    const explicit = parseWarningMode(hints.warningMode)
+    if (explicit) {
+      return explicit
+    }
+    const hasLegacyWarningKeys =
+      typeof hints.stuckWarning === 'boolean' ||
+      typeof hints.unwinnableWarning === 'boolean'
+    if (!hasLegacyWarningKeys && !legacyHintsEnabled) {
+      return current.hints.warningMode
+    }
+    if (getBoolean(hints.unwinnableWarning, legacyHintsEnabled)) {
+      return 'unwinnable'
+    }
+    return getBoolean(hints.stuckWarning, true) ? 'noUsefulMoves' : 'off'
+  })()
 
   return {
     animations: {
@@ -357,6 +483,13 @@ const mergeSettings = (
     drawCount: normalizeDrawCount(incoming.drawCount),
     solvableGamesOnly: getBoolean(incoming.solvableGamesOnly, current.solvableGamesOnly),
     autoUpEnabled: getBoolean(incoming.autoUpEnabled, current.autoUpEnabled),
+    hints: {
+      warningMode,
+      hintButton: getBoolean(
+        hints.hintButton,
+        legacyHintsEnabled || current.hints.hintButton
+      ),
+    },
     developerMode: getBoolean(incoming.developerMode, current.developerMode),
     statistics: {
       showMoves: getBoolean(statistics.showMoves, current.statistics.showMoves),
@@ -367,3 +500,8 @@ const mergeSettings = (
 
 const getBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === 'boolean' ? value : fallback
+
+const parseWarningMode = (value: unknown): WarningMode | null =>
+  typeof value === 'string' && (WARNING_MODES as readonly string[]).includes(value)
+    ? (value as WarningMode)
+    : null

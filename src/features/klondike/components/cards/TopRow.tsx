@@ -255,6 +255,12 @@ export const TopRow = React.memo(
                     )}
                   </PileButton>
                 </WinCleanupPile>
+                {/* The solver "draw" hint ring rendered here from F8 to F13.
+                    Do NOT move it back: this structural slot paints UNDER the
+                    absolute card plane (Fabric hoists the card views and
+                    sorts them by zIndex), so the absolute stock card clipped
+                    the ring band. All hint rings incl. the stock one now live
+                    in HintOverlayLayer's above-cards plane. */}
               </View>
             )
           }
