@@ -19,6 +19,11 @@ import { DEAL_RANKS } from '../../../solitaire/dealIdentity'
 import { FOUNDATION_SUIT_ORDER } from '../../../solitaire/klondike'
 import { useAnimationToggles } from '../../../state/settings'
 import type { Card, GameState, Suit } from '../../../solitaire/klondike'
+import {
+  resolveCelebrationPreviewStats,
+  type CelebrationPreviewStats,
+  type CelebrationPreviewStatsRequest,
+} from '../celebrationPreviewStats'
 import { devLog } from '../../../utils/devLogger'
 import {
   CARD_ANIMATION_DURATION_MS,
@@ -52,6 +57,11 @@ export type CelebrationState = {
   // field only bridges the first ~1 frame.
   floorY: number
   cards: CelebrationCardConfig[]
+  // Screenshot-mode previews only (store-screenshots round 3): display-only
+  // synthetic MOVES/TIME for the header, so store shots don't read 0 / 0:00 on a
+  // board that was never played. Undefined for real wins AND for plain dev
+  // previews — see celebrationPreviewStats.ts for why this never enters GameState.
+  previewStats?: CelebrationPreviewStats
 }
 
 type UseCelebrationControllerParams = {
@@ -624,8 +634,12 @@ export const useCelebrationController = ({
   // overlay renders purely from this config), dev-hold is active from the start
   // (no 30s dialog, endless loop), and abort returns to the untouched game
   // without the new-game dialog (see handleCelebrationAbort).
+  //
+  // previewStatsRequest (round 3, screenshot mode): when present, the header
+  // shows deterministic synthetic MOVES/TIME instead of the untouched board's
+  // 0 / 0:00. Purely a display override on the celebration state.
   const startCelebrationPreview = useCallback(
-    (modeId?: number) => {
+    (modeId?: number, previewStatsRequest?: CelebrationPreviewStatsRequest) => {
       const boardWidthValue = boardLayout.width ?? 0
       const boardHeightValue = boardLayout.height ?? 0
       if (!boardWidthValue || !boardHeightValue) {
@@ -677,6 +691,11 @@ export const useCelebrationController = ({
         boardHeight: boardHeightValue,
         floorY: boardHeightValue - safeAreaInsets.bottom,
         cards: shuffleCelebrationCards(cards),
+        // Derived from the RESOLVED mode id (so `celebration=random` still gets a
+        // stable pair once the mode is picked).
+        previewStats: previewStatsRequest
+          ? resolveCelebrationPreviewStats(resolvedModeId, previewStatsRequest)
+          : undefined,
       })
     },
     [

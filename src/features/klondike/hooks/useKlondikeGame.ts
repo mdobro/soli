@@ -29,6 +29,7 @@ import {
 } from '../constants'
 import { EMPTY_INVALID_WIGGLE, type InvalidWiggleConfig } from '../types'
 import { computeCardMetrics } from '../utils/cardMetrics'
+import type { CelebrationPreviewStatsRequest } from '../celebrationPreviewStats'
 import { useKlondikeTimer } from './useKlondikeTimer'
 import { useKlondikePersistence } from './useKlondikePersistence'
 import { useUndoHint } from './useUndoHint'
@@ -105,7 +106,11 @@ export type UseKlondikeGameResult = {
   handleLaunchDemoGame: (options?: LaunchDemoGameOptions) => void
   resetUndoHintForTesting: () => void
   seedHistoryForTesting: (action: 'seed' | 'clear') => void
-  startCelebrationPreview: (modeId?: number) => void
+  // Second arg = display-only synthetic header stats for screenshot-mode previews.
+  startCelebrationPreview: (
+    modeId?: number,
+    previewStats?: CelebrationPreviewStatsRequest
+  ) => void
   viewProps: KlondikeGameViewProps
 }
 
@@ -199,23 +204,6 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
       }),
     [state.selected, state.tableau, state.foundations, state.waste]
   )
-
-  // Builds the statistics badges based on current settings and elapsed time.
-  const { moveCount, elapsedMs, timerState, timerStartedAt } = state
-
-  const statisticsRows: StatisticsRow[] = useMemo(() => {
-    if (!showMoves && !showTime) {
-      return []
-    }
-    return buildStatisticsRows({
-      showMoves,
-      showTime,
-      moveCount,
-      elapsedMs,
-      timerState,
-      timerStartedAt,
-    })
-  }, [elapsedMs, moveCount, showMoves, showTime, timerStartedAt, timerState])
 
   const headerPadding = useMemo(
     () => ({
@@ -449,6 +437,42 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     onWinVisualHandoffStart: flushPendingSolvedResultAfterHandoff,
     requestNewGameRef,
   })
+
+  // Builds the statistics badges based on current settings and elapsed time.
+  // Placed after the celebration controller because screenshot-mode celebration
+  // PREVIEWS override the pair (see below).
+  const { moveCount, elapsedMs, timerState, timerStartedAt } = state
+  // Store-screenshots round 3: a `?celebration=<id>&screenshot=1` preview runs on
+  // a board that was never played, so the real header reads MOVES 0 / TIME 0:00 —
+  // obviously fake in store shots. The preview carries display-only synthetic
+  // stats; this is the ONLY place that reads them, so state/history/persistence
+  // never see the fake numbers (celebrationPreviewStats.ts).
+  const celebrationPreviewStats = celebrationState?.previewStats
+
+  const statisticsRows: StatisticsRow[] = useMemo(() => {
+    if (!showMoves && !showTime) {
+      return []
+    }
+    return buildStatisticsRows({
+      showMoves,
+      showTime,
+      moveCount: celebrationPreviewStats?.moveCount ?? moveCount,
+      elapsedMs: celebrationPreviewStats?.elapsedMs ?? elapsedMs,
+      // Frozen while previewing: 'paused' + no start timestamp make
+      // computeElapsedWithReference return elapsedMs verbatim, so re-firing the
+      // same link reproduces the exact same screenshot.
+      timerState: celebrationPreviewStats ? 'paused' : timerState,
+      timerStartedAt: celebrationPreviewStats ? null : timerStartedAt,
+    })
+  }, [
+    celebrationPreviewStats,
+    elapsedMs,
+    moveCount,
+    showMoves,
+    showTime,
+    timerStartedAt,
+    timerState,
+  ])
 
   const [invalidWiggle, setInvalidWiggle] = useState<InvalidWiggleConfig>(
     createEmptyInvalidWiggle

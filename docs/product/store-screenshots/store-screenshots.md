@@ -22,6 +22,10 @@ Round 2 decisions (orchestrator recommendations, accepted by default):
 
 ## Summary
 
+Round 3 capture DONE (2026-08-02): 10 shots at **1284x2778** (App Store Connect 6.5-inch slot) in `.test-artifacts/store-screenshots/r3-ios-1284x2778/`, captured natively on an iPhone 14 Plus sim (`ASC-65-1284`), alpha-stripped, all conformance-verified. Cause of the ASC rejection was a wrong SLOT, not wrong files — see "Round 3 capture" below. Synthetic celebration stats device-verified (every mode matched its documented pair).
+
+Round 3 code change DONE (2026-08-02): screenshot-mode celebration previews now render deterministic synthetic MOVES/TIME (120–180 moves / 4:00–7:00, derived from the mode id) instead of MOVES 0 / TIME 0:00. Display-only — nothing enters game state, persistence or history. Optional `&moves=N&time=SECONDS` override. See "Round 3 steps" below.
+
 iOS pass DONE (2026-07-09): full iPhone set (8 shots, 1320x2868 on a new iPhone 17 Pro Max sim) + iPad set (2 shots, 2048x2732 on a new iPad Air 13" M3 sim) captured to `.test-artifacts/store-screenshots/{ios,ipad}/`. All shots dev-UI-free (developer mode manually toggled off after each fixture deep link — see learnings), status bar 9:41/full battery. Celebration captured from a REAL win (ring/wreath Skia mode).
 
 Round 2 iOS pass DONE (2026-07-09): 11 iPhone shots (7 celebration modes incl. 2-frame spirograph/youwin, late mid-game 70/80, near-win with exactly 2 face-down, settings, seeded history) + 4 iPad shots (spirograph, kaleidoscope, bonus infinity, settings). Screenshot mode (`&screenshot=1`) worked flawlessly — no dev UI anywhere, no manual toggling. Best modes: 36 Spirograph + 46 Kaleidoscope; 43 You Win as message shot.
@@ -95,6 +99,63 @@ None new. Uses existing demo deep-link infra + `xcrun simctl` + `adb`.
 - [x] Android sub-agent: rebuild (`yarn release`), same round-2 set on the phone, seedhistory + clear, demo mode enter/exit — DONE 2026-07-09, 12 shots, all cleanup verified (see round-2 Android results/learnings)
 - [x] Orchestrator: review Android round-2 images + final summary — approved. Nits flagged to Karim: (1) Android/iPad Spirograph frames show residual board cards top-left (preview overlays current board; iPhone frame is clean since the mandala covers the full screen); (2) Android 10-history top rows are today's agent-test rows (duplicate deals, 0-move incompletes, 95 incomplete count) — weakest shot, recommend recapture on a day with real recent games or use the iOS-style seeded look.
 
+### Round 3 steps (celebration header stats, 2026-08-02)
+
+> Round 3 prompt: celebration screenshots (`soli://?celebration=<modeId>&screenshot=1`) look great BUT the header still shows MOVES 0 / TIME 0:00 because no real game was played — looks fake in store shots. Approach (A) synthetic plausible stats preferred over (B) hiding the stats; must be gated to the screenshot/preview path only, never real gameplay or history.
+
+- [x] Chose **(A) synthetic stats** — (B) would have removed the two badges that make a shot read as a real game. (A) needed no reducer/game-state change: the celebration preview already carries its own synthesized payload, so the numbers ride along on `CelebrationState.previewStats` and are consumed by exactly one reader (the statistics-HUD memo in `useKlondikeGame`). Nothing else can see them → history/persistence/win-recorder stay clean by construction.
+- [x] Deterministic, not random: values derive from the RESOLVED mode id (`120 + (id*7 % 61)` moves, `240 + (id*37 % 181)` seconds → 120–180 moves, 4:00–7:00), so a re-fired link reproduces the identical screenshot on any device. Frozen timer (`timerState: 'paused'`, no start timestamp) so the TIME badge doesn't tick during a capture loop.
+- [x] Gate: `screenshot=1` on a `?celebration=` link, or an explicit `&moves=N&time=SECONDS` override (which also enables the synthetic header without `screenshot=1`, for dev inspection). A plain `yarn celebration <id>` preview is unchanged (real header).
+- [x] Unit test + soli-testing skill documented; cheap gates green (typecheck/lint/jest 34 suites, 361 tests).
+
+Capture syntax for the next screenshot pass: `yarn celebration 36 --screenshot` (deterministic pair per mode: 22→152/5:30, 27→126/5:34, 32→161/5:38, 36→128/5:05, 39→149/6:56, 43→177/6:23, 46→137/5:13) or `yarn deeplink 'soli://?celebration=36&screenshot=1&moves=143&time=312' --ios` for an exact pair. The timer-nudge + wait trick is now only needed for the scrubbed/nearwin fixtures (real games).
+
+### Round 3 capture: the 6.5-inch (1284x2778) set, 2026-08-02
+
+> Round 3 prompt: App Store Connect rejected the round-2 uploads with "Screenshots dimensions should be: 1242 × 2688px, 2688 × 1242px, 1284 × 2778px or 2778 × 1284px". Retake at matching dimensions, in a new folder.
+
+**Root cause — the files were never wrong, the SLOT was.** That error string is verbatim the allow-list of the App Store Connect **"iPhone 6.5-inch Display"** slot. 1320x2868 (what rounds 1-2 captured, from an iPhone 17 Pro Max sim) is the **6.9-inch** size and is the current preferred one. ASC exposes only two iPhone slots (6.9" and 6.5") and auto-derives every smaller size from whichever is populated; when a legacy 6.5" set already exists on the app, the Media Manager pre-selects that tab and 6.9" files dropped there get rejected. Validation is an exact per-slot allow-list — one pixel off fails, there is no aspect tolerance.
+
+Two valid fixes: (a) upload the 1320x2868 set into the **6.9" slot** and delete the 6.5" set (zero work, preferred); (b) capture natively at 1284x2778. Round 3 did (b) since it satisfies either path.
+
+Slot reference (portrait): 6.9" = 1320x2868 (also tolerates 1290x2796) · 6.5" = 1284x2778 **or** 1242x2688 · everything smaller is auto-scaled by Apple.
+
+Device types that produce these natively (all present and iOS 26.5-compatible; empirically verified):
+
+| Target | Device type | Sim kept on this Mac |
+|---|---|---|
+| 1284x2778 | `iPhone-14-Plus` (also `iPhone-12-Pro-Max`, `iPhone-13-Pro-Max`) | `ASC-65-1284` (`000F1A66-9724-4589-A40A-6246689EE9E1`) |
+| 1242x2688 | `iPhone-11-Pro-Max` (`iPhone-XS-Max` exists but can't pair with iOS 26.5 — iOS 26 dropped A12) | `ASC-65-1242` (`9735A35E-57BC-4FF9-8A2E-F61466DED239`) |
+| 1320x2868 | `iPhone-17-Pro-Max` | not kept (rounds 1-2 created and later removed it) |
+
+These two ASC sims are kept deliberately for store captures — they are the documented exception to the "this Mac keeps exactly one simulator" rule in the soli-testing skill. `iPhone 11 Pro`/`iPhone XR`/`iPhone 11` are 828x1792 @2x despite being in the 6.5" marketing bucket — do not use them.
+
+Result: 10 shots in `.test-artifacts/store-screenshots/r3-ios-1284x2778/` (alternates in `_frames/`), all verified 1284x2778, 8-bit RGB, sRGB. Rounds 1-2 folders untouched.
+
+| File | Content | MOVES / TIME |
+|---|---|---|
+| `01-fresh-deal.png` | Fresh deal, empty foundations | 0 / 0:00 |
+| `02-midgame-late.png` | Scrubbed fixture 70/80, Undo visible, foundations 2♥/A♣ | 80 / 3:56 |
+| `03-nearwin-covered.png` | nearwin `left=45` → exactly 2 face-down, fat foundations (5♥/5♦/3♣/6♠), long ordered runs | 199 / 7:02 |
+| `04-celebration-fireworks.png` | mode 39, symmetric spade fountain + club burst | 149 / 6:56 (synthetic) |
+| `05-celebration-meteorshower.png` | mode 32, full-screen diagonal streaks | 161 / 5:38 (synthetic) |
+| `06-celebration-spirograph.png` | mode 36, dense screen-filling mandala | 128 / 5:05 (synthetic) |
+| `07-celebration-youwin.png` | mode 43, complete "YOU WIN!" before the Y re-deals | 177 / 6:23 (synthetic) |
+| `08-win-dialog.png` | REAL win → "Start a new game? Nice win!" over the Kings fan | 247 / 25:05 |
+| `09-settings.png` | Full settings incl. Hint button + Warnings select; Developer mode OFF | — |
+| `10-history.png` | 10 games / 5 solved / 4 incomplete, seeded + active rows | — |
+
+Round-3 verdicts: `03`, `05`, `06`, `07`, `09` are the strongest. `06` spirograph remains the best celebration (confirms the round-2 verdict). `04` fireworks is still the weakest mode — the shipped frame is `_frames/04-fireworks-d.png` (previous pick preserved as `_frames/04-fireworks-PREVIOUS-PICK.png`).
+
+Known nits, all cosmetic and none blocking upload:
+
+- `08-win-dialog.png` reads **25:05** — a real win driven by an agent playing manually, so the clock ran long. Unflattering but authentic; a recapture means replaying a whole win.
+- `02-midgame-late.png` is sparse (foundations only 2♥/A♣, bottom half empty felt). Same complaint as round 2 — the scrubbed fixture keeps most cards in the tableau at 70/80. A richer mid-game needs a different fixture, not a different scrub index.
+- `10-history.png` row 2 is an agent-test row (`0 moves · 0:00`), and the seed rows carry synthetic-looking deal ids (`0000-0001`, `0000-0002`) next to real ones (`PZ6U-C26R`). Cosmetic.
+- Verified on device: the round-3 synthetic-stats change works — every celebration shot matched its documented deterministic pair exactly, and the timer stayed frozen across each capture loop.
+
+Alpha: `xcrun simctl io ... screenshot` emits 8-bit **RGBA**, and Apple's spec says screenshots can't include alpha. Final pass is `ffmpeg -y -i in.png -pix_fmt rgb24 out.png` — note `sips -s format png` does NOT strip it. Capture with `--mask=ignored` for a clean full rectangle with no baked-in rounded corners. The rounds 1-2 sets were never alpha-stripped.
+
 ### Round 2 shot list
 
 - Celebrations (screenshot mode, several modes so Karim can pick — suggested: 39 Fireworks, 36 Spirograph, 27 Galaxy, 32 Meteor Shower, 22 Vortex, 46 Kaleidoscope, 43 You Win): 2-3 frames each, keep the best per mode as `08-celebration-<name>-{a,b}.png`. Fire on a visually clean board (fresh deal or judge from frames — preview overlays the current board).
@@ -147,7 +208,12 @@ None (artifact-only task). Output: `.test-artifacts/store-screenshots/`.
 - `docs/product/store-screenshots/store-screenshots.md` (this plan)
 - `src/features/klondike/hooks/useDemoGameLauncher.ts` — screenshot mode: `screenshot=1` (accepts 1/true/on) on any demo link forces dev mode OFF instead of ON (one shared `applyLinkDeveloperMode()` per branch); `screenshotMode` option threaded into `handleLaunchDemoGame` so the force-launch path doesn't re-enable dev mode
 - `scripts/deeplink.js` — `--screenshot` flag appends `screenshot=1` (before any `#fragment`) for all shortcuts + raw URLs
-- `.agents/skills/soli-testing/SKILL.md` — screenshot mode documented in the deep-link catalog + wrapper + celebration + logs sections; the "toggle developer mode OFF after every link" workaround replaced
+- `.agents/skills/soli-testing/SKILL.md` — screenshot mode documented in the deep-link catalog + wrapper + celebration + logs sections; the "toggle developer mode OFF after every link" workaround replaced; round 3: synthetic celebration header stats (per-mode table, override syntax)
+- Round 3 (`src/features/klondike/celebrationPreviewStats.ts` NEW) — pure, deterministic MOVES/TIME resolver + `CelebrationPreviewStats(Request)` types
+- Round 3 (`src/features/klondike/hooks/useCelebrationController.ts`) — optional `previewStats` on `CelebrationState`; `startCelebrationPreview(modeId?, previewStatsRequest?)` resolves them against the resolved mode id
+- Round 3 (`src/features/klondike/hooks/useDemoGameLauncher.ts`) — exported pure `parseCelebrationStatsLinkParams` (`screenshot=1` / `&moves=` / `&time=`), forwarded to the preview
+- Round 3 (`src/features/klondike/hooks/useKlondikeGame.ts`) — statistics-HUD memo moved below the celebration controller and overridden by `celebrationState.previewStats` (display-only)
+- Round 3 (`test/unit/features/klondike/celebrationPreviewStats.test.ts` NEW) — determinism, plausible band for every real mode, override + nonsense-override handling, link gating
 
 ## Intermediary learnings
 
@@ -217,6 +283,9 @@ None (artifact-only task). Output: `.test-artifacts/store-screenshots/`.
 - Round 2 Android: every kept PNG read + checked against the same bar (09:41, full battery, no notification icons, no dev UI): 12x 1080x2412, `file` spot-checked. Cleanup verified via screenshots: real status bar back, Demo button gone after the `--screenshot` re-clear, seed counts down by exactly 8.
 
 ## Follow-ups
+
+- Round 3: the change is unit-tested but NOT yet device-verified — the next screenshot agent should confirm on the first frame that a `--screenshot` celebration link shows a plausible pair (e.g. mode 36 → MOVES 128 / TIME 5:05) and that a plain `yarn celebration 36` still shows the real header. Cheap: one link, one screencap.
+- Round 3 nice-to-have (skipped, avoid gold plating): a `yarn celebration <id> --moves N --time S` wrapper flag. Raw `yarn deeplink 'soli://?celebration=<id>&screenshot=1&moves=N&time=S'` already covers it and keeps the wrapper a delivery tool, not a link catalog.
 
 - Android tablet screenshots via emulator, if the Play tablet slots should be refreshed (manual `adb install` of the release APK since `yarn release` refuses emulators). Medium effort; recommendation: only if Play flags stale tablet assets.
 - Optional recaptures if the pairs bother: Android win dialog (244 moves / 0:26) and Android Draw-3 fan (1 move / 0:56) have slightly implausible MOVES/TIME pairs; a timer nudge fixes both. Low effort.

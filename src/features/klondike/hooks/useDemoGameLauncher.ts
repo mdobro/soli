@@ -14,6 +14,7 @@ import type { WarningMode } from '../../../state/settings'
 import { isExactDealId, parseExactDealId } from '../../../solitaire/dealIdentity'
 import type { ExactDealId } from '../../../solitaire/dealIdentity'
 import { CELEBRATION_MODE_METADATA } from '../../../animation/celebrationModes'
+import type { CelebrationPreviewStatsRequest } from '../celebrationPreviewStats'
 import {
   createDemoReplayGameState,
   createNearWinGameState,
@@ -71,7 +72,12 @@ type UseDemoGameLauncherOptions = {
   startGameFromExactDeal: (exactId: ExactDealId, drawCount?: DrawCount) => void
   // Story 5 (celebration-smoothness): controller-owned preview (dev-hold, silent
   // abort back to the untouched game). Undefined modeId = random mode.
-  startCelebrationPreview: (modeId?: number) => void
+  // previewStats (store-screenshots round 3): display-only synthetic header
+  // stats; undefined keeps the real (untouched-board) MOVES/TIME.
+  startCelebrationPreview: (
+    modeId?: number,
+    previewStats?: CelebrationPreviewStatsRequest
+  ) => void
 }
 
 export type LaunchDemoGameOptions = {
@@ -126,6 +132,35 @@ const parseOptionalIntParam = (value: string | null): number | undefined => {
   }
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+// Celebration-preview header stats (store-screenshots round 3): pure decision,
+// exported for unit tests. A preview board was never played, so the header would
+// read MOVES 0 / TIME 0:00 — fine for dev mode inspection, fake-looking in store
+// shots. Synthetic stats are therefore switched on by `screenshot=1` (the store
+// -capture flag) or by an explicit `&moves=`/`&time=` override; a plain
+// `?celebration=<id>` preview keeps the real header untouched.
+export const parseCelebrationStatsLinkParams = ({
+  screenshotMode,
+  moves,
+  time,
+}: {
+  screenshotMode: boolean
+  moves: string | null
+  time: string | null
+}): CelebrationPreviewStatsRequest | undefined => {
+  const movesOverride = parseOptionalIntParam(moves)
+  // `time` is in SECONDS (deep links stay hand-typable); ms conversion happens in
+  // resolveCelebrationPreviewStats.
+  const timeSecondsOverride = parseOptionalIntParam(time)
+  if (
+    !screenshotMode &&
+    movesOverride === undefined &&
+    timeSecondsOverride === undefined
+  ) {
+    return undefined
+  }
+  return { moves: movesOverride, timeSeconds: timeSecondsOverride }
 }
 
 // C1 (?set=drawCount:3,autoUp:off,solvableOnly:on): pure parser, exported for
@@ -989,11 +1024,17 @@ export const useDemoGameLauncher = ({
           devLog('warn', `[Demo] Celebration link: unknown mode "${celebrationParam}".`)
           return
         }
+        const previewStatsRequest = parseCelebrationStatsLinkParams({
+          screenshotMode,
+          moves: parsed.searchParams.get('moves'),
+          time: parsed.searchParams.get('time'),
+        })
         devLog(
           'info',
           `[Demo] Celebration link: ${
             metadata ? `mode ${metadata.id} (${metadata.name})` : 'random mode'
-          }.`
+          }.`,
+          { previewStats: previewStatsRequest ?? 'real header stats' }
         )
         // Settle delay also gives the just-toggled dev mode a render pass so the
         // mode badge/label is up (or, in screenshot mode, gone — the badge gates
@@ -1002,7 +1043,7 @@ export const useDemoGameLauncher = ({
         // still loop indefinitely for capture at leisure.
         setTimeout(() => {
           // Undefined = random pick inside the controller (same rule as a real win).
-          startCelebrationPreview(metadata?.id)
+          startCelebrationPreview(metadata?.id, previewStatsRequest)
         }, DEMO_AUTO_STEP_INTERVAL_MS)
         return
       }
