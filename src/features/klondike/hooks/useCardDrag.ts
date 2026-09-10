@@ -32,6 +32,7 @@ import {
   type CardTransformRegistry,
   type DragSourceHit,
   type DragSourceModel,
+  type DropResolution,
 } from '../components/cards/dragGeometry'
 import type { AbsoluteCardLayerLayouts, HintRect } from '../components/cards/utils'
 
@@ -124,6 +125,13 @@ export const useCardDrag = ({
   const [dragSession, setDragSession] = useState<DragSession | null>(null)
   const dragSessionRef = useRef<DragSession | null>(null)
   dragSessionRef.current = dragSession
+  // Written synchronously by begin/clear as well, not only on the next render:
+  // endDrag runs from a runOnJS hop and a very fast flick can land before React
+  // has committed beginDrag's setState.
+  const commitSession = useCallback((session: DragSession | null) => {
+    dragSessionRef.current = session
+    setDragSession(session)
+  }, [])
 
   // Ref-backed inputs so beginDrag/endDrag (and therefore the memoized gesture)
   // never change identity — a new Gesture object re-attaches the native recognizer
@@ -132,6 +140,8 @@ export const useCardDrag = ({
   cardMetricsRef.current = cardMetrics
   const layoutsRef = useRef(layouts)
   layoutsRef.current = layouts
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
   const dispatchGameActionRef = useRef(dispatchGameAction)
   dispatchGameActionRef.current = dispatchGameAction
   const notifyInvalidMoveRef = useRef(notifyInvalidMove)
@@ -191,8 +201,8 @@ export const useCardDrag = ({
 
   const clearSession = useCallback(() => {
     resetDragValues()
-    setDragSession(null)
-  }, [resetDragValues])
+    commitSession(null)
+  }, [commitSession, resetDragValues])
 
   // A drag cannot survive the board being taken away from under it (celebration
   // start, auto-complete, board lock) or a fresh deal.
@@ -237,7 +247,7 @@ export const useCardDrag = ({
       })
 
       devLog('log', '[Drag] Begin', { selection, cards: cards.length })
-      setDragSession({
+      commitSession({
         selection,
         cards,
         offsets: computeLiftedRunOffsets(cards.length, cardMetricsRef.current.stackOffset),
@@ -247,7 +257,7 @@ export const useCardDrag = ({
         dropHints: hints,
       })
     },
-    [clearSession, stateRef]
+    [clearSession, commitSession, stateRef]
   )
 
   // Runs after the snap-back animation (or immediately with animations off): the
@@ -282,27 +292,40 @@ export const useCardDrag = ({
       }
 
       // The mask cached at beginDrag is for HIGHLIGHTING only; the drop always
-      // re-validates against live state. That closes the "second finger hit Undo
-      // mid-drag" class of races (and applyMove validates once more anyway).
+      // re-validates against live state. That closes the "something else dispatched
+      // mid-drag" class of races (undo, a second finger tapping another card, the
+      // auto-queue), and applyMove validates once more anyway.
+      //
+      // First: does this selection still lift the card we picked up? If not, the
+      // board moved under the drag and the selection now points at something else —
+      // dropping it would move a card the player never grabbed. Snap back silently.
+      const liveStack = previewSelectionStack(current, session.selection)
+      const boardMoved = !liveStack.length || liveStack[0].id !== session.cards[0].id
       const hints = getDropHints({
         selected: session.selection,
         tableau: current.tableau,
         foundations: current.foundations,
         waste: current.waste,
       })
-      const resolution = resolveDropCandidate(
-        buildDropCandidates({
-          tableau: current.tableau,
-          layouts: layoutsRef.current,
-          cardMetrics: metrics,
-          hints,
-          selection: session.selection,
-        }),
-        cardRect
-      )
+      const resolution: DropResolution = boardMoved
+        ? { kind: 'none' }
+        : resolveDropCandidate(
+            buildDropCandidates({
+              tableau: current.tableau,
+              layouts: layoutsRef.current,
+              cardMetrics: metrics,
+              hints,
+              selection: session.selection,
+            }),
+            cardRect
+          )
       devLog('log', '[Drag] Drop', { resolution, selection: session.selection })
 
-      if (resolution.kind === 'legal') {
+      // If the board was taken away mid-drag (lock, celebration, auto-complete),
+      // dispatchGameAction would silently drop the move while the cards had already
+      // been seeded to the drop point — they would then sit there with no flight to
+      // correct them. Snap back instead.
+      if (resolution.kind === 'legal' && enabledRef.current) {
         // Seed the real (still hidden) cards to the drop point, then dispatch and
         // unhide in the SAME JS task: React 19 batches both into one commit, so the
         // cards become visible already at the drop position and the existing 90 ms
@@ -320,7 +343,7 @@ export const useCardDrag = ({
           selection: session.selection,
           target: resolution.target,
         })
-        setDragSession(null)
+        commitSession(null)
         // dragX/dragY/lift are deliberately NOT reset here: the overlay is still
         // mounted for this commit, and zeroing them would flash the copies back to
         // the origin for a frame. The next drag's onStart zeroes them.
@@ -335,6 +358,7 @@ export const useCardDrag = ({
       const releaseX = session.originRect.x + session.touchOffset.x + translationX
       const releaseY = session.originRect.y + session.touchOffset.y + translationY
       if (
+        !boardMoved &&
         resolution.kind !== 'illegal' &&
         isPointInRect(session.originRect, releaseX, releaseY)
       ) {
@@ -365,8 +389,14 @@ export const useCardDrag = ({
       const selection = session.selection
       dragX.value = withTiming(0, timing)
       lift.value = withTiming(0, timing)
-      dragY.value = withTiming(0, timing, () => {
+      dragY.value = withTiming(0, timing, (finished) => {
         'worklet'
+        // An unfinished snap-back means a NEW drag interrupted it (onStart is the
+        // only other writer of these values). Clearing then would wipe the fresh
+        // session; beginDrag's own commit already replaces the old one.
+        if (!finished) {
+          return
+        }
         runOnJS(finishReturn)(shouldWiggle, selection)
       })
     },
@@ -374,6 +404,7 @@ export const useCardDrag = ({
       animationsEnabledShared,
       cardTransforms,
       clearSession,
+      commitSession,
       dragActiveShared,
       dragX,
       dragY,
