@@ -34,6 +34,7 @@ import { useKlondikeTimer } from './useKlondikeTimer'
 import { useKlondikePersistence } from './useKlondikePersistence'
 import { useUndoHint } from './useUndoHint'
 import { useHint } from './useHint'
+import { useRewindToWinnable } from './useRewindToWinnable'
 import { useKlondikeHistoryEntry } from './useKlondikeHistoryEntry'
 import { useSolvableDealSelector } from './useSolvableDealSelector'
 import { useCelebrationController } from './useCelebrationController'
@@ -178,7 +179,11 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
   const preferredDrawCount = settingsState.drawCount
   const autoUpEnabled = settingsState.autoUpEnabled
   // Warning-mode select + hint button toggle (F14) — see settings.tsx.
-  const { warningMode, hintButton: hintButtonEnabled } = settingsState.hints
+  const {
+    warningMode,
+    hintButton: hintButtonEnabled,
+    rewindToWinnable: rewindToWinnableEnabled,
+  } = settingsState.hints
   const developerModeEnabled = settingsState.developerMode
 
   const animationToggles = useAnimationToggles()
@@ -865,12 +870,31 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
   // Hint button + background warnings (hints plan; warning-mode select since
   // F14). Dispatchless since feedback round 1 (2026-07-23): hint visuals are a
   // dedicated overlay, never selection state, so useHint needs no dispatcher.
-  const { requestHint, activeHint, hintBubbleText, warningEmphasisNonce } = useHint({
+  const {
+    requestHint,
+    activeHint,
+    hintBubbleText,
+    warningEmphasisNonce,
+    warningEraKey,
+    enqueueSolve,
+  } = useHint({
     state,
     stateRef,
     warningMode,
     hintButtonEnabled,
     demoPlaybackActiveRef,
+  })
+
+  // Rewind to the last winnable move (rewind-to-winnable plan). Runs only
+  // while an outstanding warning says the game is proven lost, and borrows
+  // useHint's solver queue so the two never solve at the same time.
+  const { rewindIndex, rewindToWinnable } = useRewindToWinnable({
+    state,
+    stateRef,
+    enabled: rewindToWinnableEnabled,
+    warningEraKey,
+    enqueueSolve,
+    dispatch,
   })
 
   const {
@@ -987,6 +1011,8 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     onHintPress: requestHint,
     hintBubbleText,
     warningEmphasisNonce,
+    rewindIndex,
+    onRewindPress: rewindToWinnable,
   }
 
   const viewProps: KlondikeGameViewProps = {

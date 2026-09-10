@@ -8,15 +8,17 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated'
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler'
-import { Lightbulb, Undo2 } from '@tamagui/lucide-icons-2'
+import { Lightbulb, Rewind, Undo2 } from '@tamagui/lucide-icons-2'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import {
+  COLOR_HINT,
   UNDO_BUTTON_DISABLED_OPACITY,
   UNDO_SCRUB_BUTTON_DIM_OPACITY,
   UNDO_SCRUBBER_OVERLAY_HORIZONTAL_PADDING,
   UNDO_SCRUBBER_SAFE_AREA_BOTTOM_PADDING,
 } from '../constants'
+import { getScrubMarkerLeft } from '../scrubberMarker'
 import { UndoHintBubble } from './UndoHintBubble'
 import { GameNoticeBubble } from './GameNoticeBubble'
 
@@ -44,11 +46,19 @@ export type UndoScrubberProps = {
   onHintPress: () => void
   hintBubbleText: string | null
   warningEmphasisNonce: number
+  // Rewind to the last winnable move (rewind-to-winnable plan). Both fields
+  // are driven by the SAME computed timeline index, so the button and the
+  // track marker can never point at different moves. rewindIndex null (setting
+  // off, no warning, or nothing proven) = the whole feature renders nothing.
+  rewindIndex: number | null
+  onRewindPress: () => void
 }
 
 const AnimatedView = createAnimatedComponent(View)
 const SCRUBBER_THUMB_SIZE = 20
 const SCRUBBER_THUMB_RADIUS = SCRUBBER_THUMB_SIZE / 2
+// Narrow enough to read as a tick mark rather than a second thumb.
+const SCRUBBER_MARKER_WIDTH = 3
 const SCRUBBER_HIDDEN_SCALE = 0.985
 const SCRUBBER_TRANSITION = { duration: 140 } as const
 // Undo button height: 14px vertical padding ×2 + 20px icon (styles.undoButton). Used
@@ -120,6 +130,8 @@ export const UndoScrubber = React.memo(
     onHintPress,
     hintBubbleText,
     warningEmphasisNonce,
+    rewindIndex,
+    onRewindPress,
   }: UndoScrubberProps) => {
     const trackRef = useRef<View>(null)
     const trackWidth = useSharedValue(0)
@@ -172,6 +184,21 @@ export const UndoScrubber = React.memo(
         transform: [{ translateX: normalized * travelWidth }],
       }
     }, [scrubIndex, sliderMax, trackWidth])
+
+    // Marker for the last winnable move. Animated because the track width only
+    // exists as a shared value (measured in onLayout); the index itself is a
+    // plain prop that changes at most once per warning.
+    const markerStyle = useAnimatedStyle(() => {
+      return {
+        left: getScrubMarkerLeft({
+          index: rewindIndex ?? 0,
+          sliderMax,
+          trackWidth: trackWidth.value,
+          thumbSize: SCRUBBER_THUMB_SIZE,
+          markerWidth: SCRUBBER_MARKER_WIDTH,
+        }),
+      }
+    }, [rewindIndex, sliderMax, trackWidth])
 
     const overlayStyle = useAnimatedStyle(() => {
       const active = scrubActive.value > 0
@@ -233,10 +260,23 @@ export const UndoScrubber = React.memo(
               onLayout={handleTrackLayout}
               style={styles.track}
               accessible
-              accessibilityLabel={`Undo scrubber, position ${historyIndex} of ${sliderMax}`}
+              // The marker lives INSIDE this accessible node, so it cannot
+              // carry its own label — the position is appended here instead
+              // (prefix unchanged so existing recipes keep matching).
+              accessibilityLabel={
+                rewindIndex === null
+                  ? `Undo scrubber, position ${historyIndex} of ${sliderMax}`
+                  : `Undo scrubber, position ${historyIndex} of ${sliderMax}, last winnable move ${rewindIndex}`
+              }
               testID="undo-scrubber-track"
             >
               <AnimatedView style={[styles.trackActive, activeTrackStyle]} />
+              {rewindIndex === null ? null : (
+                <AnimatedView
+                  style={[styles.winnableMarker, markerStyle]}
+                  testID="undo-scrubber-winnable-marker"
+                />
+              )}
               <AnimatedView style={[styles.thumb, thumbStyle]} />
             </View>
           </View>
@@ -254,7 +294,27 @@ export const UndoScrubber = React.memo(
           bottom={bottomDockOffset + UNDO_BUTTON_HEIGHT + 8}
           emphasisNonce={warningEmphasisNonce}
         />
-        {hintButtonVisible ? (
+        {rewindIndex !== null ? (
+          // Takes the Hint button's slot rather than adding a third pill: the
+          // dock's left half is the only place a tappable control fits (the
+          // pan's hitSlop claims 50px ABOVE the Undo pill, so nothing tappable
+          // may sit there), and during a dead era the Hint button is inert
+          // anyway — a press inside an outstanding warning only re-affirms the
+          // warning (useHint's F15 decision table, case 1). Swapping it for
+          // the one action that actually helps is strictly better use of the
+          // slot. Same plain-Pressable-outside-GestureWrapper pattern as the
+          // Hint button (Tamagui/expo-ui controls fight the pan gesture).
+          <Pressable
+            style={[styles.hintButton, { bottom: bottomDockOffset }]}
+            onPress={onRewindPress}
+            accessibilityRole="button"
+            accessibilityLabel="Rewind to last winnable move"
+            testID="rewind-to-winnable"
+          >
+            <Rewind size={20} color="#000" />
+            <Text style={styles.undoButtonText}>Rewind</Text>
+          </Pressable>
+        ) : hintButtonVisible ? (
           // Plain RN Pressable, deliberately OUTSIDE the GestureWrapper/pan
           // area (Tamagui/expo-ui buttons conflict with the pan gesture — see
           // GestureWrapper). Mirrors the Undo pill in the left half of the dock
@@ -336,6 +396,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 999,
     backgroundColor: 'rgba(255, 255, 255, 0.85)',
+  },
+  // Same amber as the hint rings (COLOR_HINT): both mean "the solver is
+  // telling you something", and it reads clearly against the track's
+  // translucent white.
+  winnableMarker: {
+    position: 'absolute',
+    top: -3,
+    bottom: -3,
+    width: SCRUBBER_MARKER_WIDTH,
+    borderRadius: 999,
+    backgroundColor: COLOR_HINT,
   },
   thumb: {
     position: 'absolute',
