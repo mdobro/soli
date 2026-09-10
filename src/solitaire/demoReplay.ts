@@ -320,3 +320,47 @@ export const createNearWinGameState = (
   const { movesLeft: resolved } = resolveNearWinMovesLeft(movesLeft)
   return foldReplayFixture(entry, entry.moves.length - resolved)
 }
+
+// --- "Dead end" fixture (rewind-to-winnable) ---
+// A position the solver can PROVE is lost, whose own history is provably
+// winnable — i.e. a real rewind boundary — reachable from one deep link.
+// Before this existed the only way to reach a dead game was to deal random
+// deals until one died, which took minutes and was not reproducible.
+//
+// Recipe: replay 81 primitive steps of playlist entry 0's solution, then play
+// ONE deliberately bad move. Step 81 is a draw that puts the K♠ on the waste;
+// the killing move drops that K♠ into the board's only empty column. That
+// column is the sole route to unload tableau column 7 (six face-down cards on
+// top of the A♠), so filling it with a king that nothing can ever move again
+// is irreversible — and it is exactly the move a real player would make.
+//
+// VERIFIED against the vendored Rust solver (rust/, `solve_request_json`,
+// budget 2000 ms, 2026-09-10) — both verdicts are pinned as a permanent
+// regression test in rust/soli-solver-ffi/tests/solver_tests.rs
+// (`dead_end_demo_fixture_boundary_is_real`):
+//   after 81 solution steps  → {"status":"solved"}       (0.1 ms)
+//   after the K♠ move        → {"status":"unsolvable"}   (0.1 ms)
+// So the last winnable timeline index is 81 and the current position (82) is
+// dead. Change either constant below and the Rust test must be re-verified.
+export const DEADEND_DEMO_SOLUTION_STEPS = 81
+// Exported so the tests (and any future device recipe) name the same move.
+export const DEADEND_DEMO_KILLING_MOVE: DemoReplayMove = {
+  type: 'move',
+  card: { suit: 'spades', rank: 13 },
+  source: { type: 'waste' },
+  target: { type: 'tableau', columnIndex: 1 },
+}
+
+// Auto Up off (inherited from createDemoReplayGameState) so the board does not
+// clean itself up underneath the warning, and the fold runs the real reducer,
+// so the state carries a real exactId plus an 82-entry moveLog and 82 undo
+// snapshots — the binary search in useRewindToWinnable gets a genuine timeline
+// to search (83 indices → ~7 solver probes).
+export const createDeadEndGameState = (): GameState => {
+  const entry = getReplayFixtureEntry()
+  const state = foldReplayFixture(entry, DEADEND_DEMO_SOLUTION_STEPS)
+  // Same THROWING validation as the fold: if a regenerated playlist ever left a
+  // different card on the waste, this fails loudly instead of silently shipping
+  // a fixture that is not actually dead.
+  return applyDemoReplayMoveForValidation(state, DEADEND_DEMO_KILLING_MOVE)
+}
