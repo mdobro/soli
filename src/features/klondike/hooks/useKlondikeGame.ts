@@ -885,17 +885,21 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     demoPlaybackActiveRef,
   })
 
-  // Rewind to the last winnable move (rewind-to-winnable plan). Runs only
-  // while an outstanding warning says the game is proven lost, and borrows
-  // useHint's solver queue so the two never solve at the same time.
-  const { rewindIndex, rewindToWinnable } = useRewindToWinnable({
-    state,
-    stateRef,
-    enabled: rewindToWinnableEnabled,
-    warningEraKey,
-    enqueueSolve,
-    dispatch,
-  })
+  // Rewind to the last winnable move (rewind-to-winnable plan). The SEARCH
+  // runs only while an outstanding warning says the game is proven lost, and
+  // borrows useHint's solver queue so the two never solve at the same time;
+  // the proven boundary then outlives that warning for as long as the player
+  // is walking back to it (see the lifetime invariant in the hook).
+  const { rewindIndex, rewindAvailable, rewindToWinnable, rewinding } =
+    useRewindToWinnable({
+      state,
+      stateRef,
+      enabled: rewindToWinnableEnabled,
+      warningMode,
+      warningEraKey,
+      enqueueSolve,
+      dispatch,
+    })
 
   const {
     shouldShowUndo,
@@ -1012,6 +1016,8 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     hintBubbleText,
     warningEmphasisNonce,
     rewindIndex,
+    rewindAvailable,
+    rewinding,
     onRewindPress: rewindToWinnable,
   }
 

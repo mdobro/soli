@@ -46,11 +46,18 @@ export type UndoScrubberProps = {
   onHintPress: () => void
   hintBubbleText: string | null
   warningEmphasisNonce: number
-  // Rewind to the last winnable move (rewind-to-winnable plan). Both fields
-  // are driven by the SAME computed timeline index, so the button and the
+  // Rewind to the last winnable move (rewind-to-winnable plan). All three
+  // fields are driven by the SAME computed timeline index, so the pill and the
   // track marker can never point at different moves. rewindIndex null (setting
-  // off, no warning, or nothing proven) = the whole feature renders nothing.
+  // off, nothing proven, or the boundary retired) = the whole feature renders
+  // nothing. rewindAvailable is narrower than `rewindIndex !== null`: the
+  // marker stays up while the thumb sits ON the boundary or below it after an
+  // overshoot, but there is nothing to rewind from there, so only the marker
+  // renders. rewinding = stepped playback is running; the pill stays in place
+  // (it is the player's landmark for the walk) but goes inert.
   rewindIndex: number | null
+  rewindAvailable: boolean
+  rewinding: boolean
   onRewindPress: () => void
 }
 
@@ -131,6 +138,8 @@ export const UndoScrubber = React.memo(
     hintBubbleText,
     warningEmphasisNonce,
     rewindIndex,
+    rewindAvailable,
+    rewinding,
     onRewindPress,
   }: UndoScrubberProps) => {
     const trackRef = useRef<View>(null)
@@ -294,7 +303,7 @@ export const UndoScrubber = React.memo(
           bottom={bottomDockOffset + UNDO_BUTTON_HEIGHT + 8}
           emphasisNonce={warningEmphasisNonce}
         />
-        {rewindIndex !== null ? (
+        {rewindAvailable ? (
           // Takes the Hint button's slot rather than adding a third pill: the
           // dock's left half is the only place a tappable control fits (the
           // pan's hitSlop claims 50px ABOVE the Undo pill, so nothing tappable
@@ -305,8 +314,17 @@ export const UndoScrubber = React.memo(
           // slot. Same plain-Pressable-outside-GestureWrapper pattern as the
           // Hint button (Tamagui/expo-ui controls fight the pan gesture).
           <Pressable
-            style={[styles.hintButton, { bottom: bottomDockOffset }]}
+            style={[
+              styles.hintButton,
+              { bottom: bottomDockOffset },
+              // Inert for the duration of the stepped playback (the hook
+              // ignores a second press too): re-pressing mid-walk used to
+              // restart the whole rewind. Dimmed with the same value the Undo
+              // pill uses when it cannot act, so the dock has one disabled look.
+              rewinding ? styles.rewindButtonBusy : null,
+            ]}
             onPress={onRewindPress}
+            disabled={rewinding}
             accessibilityRole="button"
             accessibilityLabel="Rewind to last winnable move"
             testID="rewind-to-winnable"
@@ -454,6 +472,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 12,
     backgroundColor: '#fff',
+  },
+  rewindButtonBusy: {
+    opacity: UNDO_BUTTON_DISABLED_OPACITY,
   },
   undoButtonText: {
     fontSize: 16,
