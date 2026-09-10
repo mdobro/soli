@@ -655,3 +655,31 @@ fn unwinnable_demo_fixture_boundary_is_real() {
     assert_eq!(solve_json(before_killing_move)["status"], "solved");
     assert_eq!(solve_json(after_killing_move)["status"], "unsolvable");
 }
+
+/// Pins the two verdicts the `?demo=stuck` fixture depends on
+/// (`src/solitaire/demoReplay.ts`, `createStuckGameState`). That fixture exists
+/// to trip the DEFAULT `noUsefulMoves` warning, whose predicate is
+/// `stock.length == 0 && !hasUsefulMove(board)` — but the app only WARNS after
+/// the solver confirms the heuristic, so a stuck-LOOKING board that is still
+/// solvable would never show the warning at all. That is not hypothetical: the
+/// first hundred candidates the search produced satisfied the predicate and
+/// were every one of them `solved`, because the heuristic ignores non-revealing
+/// rearrangements and foundation digs while the solver uses both.
+///
+/// The stuck predicate itself is pinned on the TS side
+/// (`test/unit/solitaire/demoReplay.stuck.test.ts`), which also asserts that
+/// these two request strings are exactly what `buildSolverRequest` produces.
+#[test]
+fn stuck_demo_fixture_boundary_is_real() {
+    // Playlist entry 19 (`default-20-draw-1`) after 210 primitive solution
+    // steps: two stock cards left and the 6D still on the waste.
+    let before_killing_moves = r#"{"drawCount":1,"budgetMs":2000,"foundations":{"c":3,"d":5,"h":2,"s":0},"tableau":[{"hidden":[],"visible":["d13","s12","h11","s10","h9","s8","h7","s6"]},{"hidden":[],"visible":["c13","h12","s11","h10","s9","d8","c7","h6","s5","h4","s3"]},{"hidden":[],"visible":["d9","c8","d7"]},{"hidden":[],"visible":["s13","d12","c11","d10"]},{"hidden":[],"visible":["c6","h5","c4","h3","s2"]},{"hidden":["c12","c10"],"visible":["d11"]},{"hidden":["s1","c9","h13"],"visible":["c5"]}],"stock":["h8","s7"],"waste":["s4","d6"]}"#;
+    // After the four killing moves: the 6D is on its foundation, column 5 is
+    // empty and the stock is out. The AS is buried under three cards in column 7
+    // with nothing on the spade foundation, and no red six is left in play to
+    // move the 5C off it.
+    let after_killing_moves = r#"{"drawCount":1,"budgetMs":2000,"foundations":{"c":3,"d":6,"h":2,"s":0},"tableau":[{"hidden":[],"visible":["d13","s12","h11","s10","h9","s8","h7","s6"]},{"hidden":[],"visible":["c13","h12","s11","h10","s9","d8","c7","h6","s5","h4","s3"]},{"hidden":[],"visible":["d9","c8","d7","c6","h5","c4","h3","s2"]},{"hidden":[],"visible":["s13","d12","c11","d10"]},{"hidden":[],"visible":[]},{"hidden":["c12","c10"],"visible":["d11"]},{"hidden":["s1","c9","h13"],"visible":["c5"]}],"stock":[],"waste":["s4","s7","h8"]}"#;
+
+    assert_eq!(solve_json(before_killing_moves)["status"], "solved");
+    assert_eq!(solve_json(after_killing_moves)["status"], "unsolvable");
+}
