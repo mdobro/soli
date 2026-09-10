@@ -1070,6 +1070,10 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     // Lifted cards during a drag: null during normal play, so the overlay costs
     // nothing per move and cannot disturb the card layer's memo boundaries.
     dragOverlayProps,
+    // Consumed by KlondikeGameView, which attaches it to the board shell rather
+    // than the card plane (Android BOX_NONE handler collection — see the comments
+    // in AbsoluteCardLayer and KlondikeGameView).
+    dragGesture,
     absoluteCardLayerProps: {
       stock: state.stock,
       waste: state.waste,
@@ -1089,7 +1093,6 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
       // All three are identity-stable while no drag runs (null / memoized gesture /
       // ref-boxed registry), so the card layer's React.memo is unaffected.
       hiddenCardIds,
-      dragGesture,
       cardTransforms,
       onDraw: handleDraw,
       onWasteTap: handleWasteTap,

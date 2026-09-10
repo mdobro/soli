@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated as NativeAnimated, Pressable, StyleSheet, View } from 'react-native'
 import type { StyleProp, ViewStyle } from 'react-native'
-import { GestureDetector } from 'react-native-gesture-handler'
-import type { GestureType } from 'react-native-gesture-handler'
 
-import { type Card, type Foundations, type Suit, type Tableau } from '../../../../solitaire/klondike'
+import {
+  type Card,
+  type Foundations,
+  type Suit,
+  type Tableau,
+} from '../../../../solitaire/klondike'
 import { useAnimationToggles } from '../../../../state/settings'
 import {
   CARD_ANIMATION_DURATION_MS,
@@ -58,7 +61,6 @@ export type AbsoluteCardLayerProps = {
   // drag is running (null / memoized gesture), so this layer's React.memo is
   // unaffected during normal play.
   hiddenCardIds: ReadonlySet<string> | null
-  dragGesture?: GestureType | null
   cardTransforms?: CardTransformRegistry | null
   onDraw: () => void
   onWasteTap: () => void
@@ -83,7 +85,6 @@ export const AbsoluteCardLayer = React.memo(
     interactionsLocked,
     celebrationActive,
     hiddenCardIds,
-    dragGesture,
     cardTransforms,
     onDraw,
     onWasteTap,
@@ -160,35 +161,23 @@ export const AbsoluteCardLayer = React.memo(
       </View>
     )
 
-    if (!dragGesture) {
-      return plane
-    }
-
-    // ONE board-level pan for the whole card plane (card-drag-and-drop plan). Not
-    // one detector per card: that would attach/detach 52 native recognizers on every
-    // board commit and would need a per-card `Gesture` prop, which the memo
-    // comparator above ignores — a stale gesture would be silently swallowed.
+    // The drag pan is deliberately NOT attached here, even though this plane's
+    // origin IS the card coordinate space. This root is pointerEvents="box-none",
+    // and on Android RNGH's orchestrator only collects handlers on a BOX_NONE view
+    // when a DESCENDANT became a touch target — a childless, background-less view
+    // does not qualify (see docs/external-package-guides/react-native-gesture-handler.md
+    // §5). The waste top card is exactly that case: its visual is pointerEvents="none"
+    // and WasteTapZone has no background.
     //
-    // Attach point: this plane's root, because its origin IS the card coordinate
-    // origin (the layout registry's space), so RNGH's view-relative event.x/y needs
-    // no conversion at all.
-    //
-    // *** R1, open until verified on a physical Android device ***
-    // The root is pointerEvents="box-none". On iOS that is safe (UIKit delivers
-    // touches to recognizers on the whole superview chain; box-none only affects the
-    // view's own hitTest). On Android RNGH's orchestrator only collects handlers on a
-    // BOX_NONE view when a DESCENDANT became a touch target, and a childless,
-    // background-less view does not qualify — see
-    // docs/external-package-guides/react-native-gesture-handler.md §5. The waste top
-    // card is exactly that case (its visual is pointerEvents="none" and WasteTapZone
-    // below has no background), so a waste drag may not start on Android.
-    // FALLBACK (one line, no coordinate change needed — the board shell and this
-    // plane share one origin): move this <GestureDetector> up to the boardShell
-    // YStack in KlondikeGameView.tsx, whose pointerEvents is `auto`.
-    //
-    // Note for the z-order story in HintOverlayLayer: GestureDetector clones its
-    // child with collapsable={false}, so this plane is no longer flattened by Fabric.
-    return <GestureDetector gesture={dragGesture}>{plane}</GestureDetector>
+    // VERIFIED on an Android emulator (2026-09-09, API 36 arm64): with the detector
+    // here, tableau drags logged [Drag] Begin but THREE consecutive waste drags logged
+    // nothing at all. iOS was unaffected (UIKit delivers touches to recognizers on the
+    // whole superview chain). The detector therefore lives on the boardShell YStack in
+    // KlondikeGameView, whose pointerEvents is `auto` so handlers are always collected.
+    // No coordinate change was needed: an absoluteFill child and its parent's onLayout
+    // children share one origin — which is why cards already line up with the
+    // structural slots today.
+    return plane
   }
 )
 
