@@ -381,7 +381,13 @@ export const klondikeReducer = (state: GameState, action: GameAction): GameState
       const workingState = haltAutoQueue(state)
       const nextState = scrubToIndex(workingState, action.index)
       if (nextState === workingState) {
-        return workingState
+        // Same hazard as the rejected APPLY_MOVE below: a scrub that lands on the
+        // index the timeline is already at changes nothing, so it must not halt a
+        // running auto queue either — the halted state was returned without
+        // finalizing, leaving isAutoCompleting false, an empty queue and nothing to
+        // restart the run. The first scrub that actually moves the timeline halts,
+        // logs and finalizes normally.
+        return state
       }
       // Review fix R2a (Codex, 2026-07-06): coalescing may only replace the previous
       // scrub entry when that scrub cannot have scheduled an auto-queue.
@@ -429,6 +435,12 @@ export const klondikeReducer = (state: GameState, action: GameAction): GameState
         hydratedState.autoUpEnabled ? hydratedState : haltAutoQueue(hydratedState)
       )
     }
+    // Dead reducer paths (2026-09-09): nothing in src/, app/ or components/
+    // dispatches SELECT_* or CLEAR_SELECTION any more — they are left over from the
+    // pre-hint selection UI. Deliberately NOT fixed, but note the hazard before
+    // reviving any of them: like the old APPLY_MOVE/SCRUB_TO_INDEX no-op paths they
+    // halt the auto queue and return without finalizing, so a selection that changes
+    // nothing would stop a running auto-complete for good.
     case 'SELECT_TABLEAU':
       return handleSelectTableau(
         haltAutoQueue(state),
@@ -482,7 +494,16 @@ export const klondikeReducer = (state: GameState, action: GameAction): GameState
         recordHistory: action.recordHistory,
       })
       if (!nextState) {
-        return workingState
+        // A rejected move is a reference-equal no-op — NOT the halted state.
+        // Returning `workingState` used to kill a running auto-complete queue and
+        // then return without finalizing, so nothing ever rescheduled and the run
+        // stopped mid-board (reachable when a tap resolves against a stale ref
+        // during the 25–35 ms auto cadence). Rescheduling here instead is not an
+        // option: scheduleAutoQueue pushes a history snapshot and this path appends
+        // no move-log entry, so replay would drift (see the R2 review batch). Not
+        // halting at all is both simpler and correct — the player did not actually
+        // change anything, so neither does the reducer.
+        return state
       }
       return finalizeState(
         appendMoveLogEntry(nextState, {

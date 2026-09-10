@@ -142,6 +142,46 @@ describe('ADVANCE_AUTO_QUEUE', () => {
     expect(afterSecond.isAutoCompleting).toBe(false)
   })
 
+  // 2026-09-09 (auto-complete reliability): both actions used to halt the queue
+  // FIRST and then return the halted state without finalizing when they turned out
+  // to be no-ops, so the run stopped mid-board and nothing ever restarted it.
+  // Rescheduling instead of not halting was not an option: scheduleAutoQueue pushes
+  // a history snapshot and neither path appends a move-log entry, which is the
+  // replay drift the R2 review batch fixed. An action that changes nothing now
+  // changes nothing at all — including the queue.
+  it('keeps a running auto queue alive when a move is rejected', () => {
+    const state = createTestState({
+      tableau: tableauWith([card('hearts', 5)]),
+      autoQueue: [{ type: 'draw' }],
+      isAutoCompleting: true,
+    })
+
+    // 5♥ cannot go to an empty hearts foundation.
+    const next = klondikeReducer(state, {
+      type: 'APPLY_MOVE',
+      selection: { source: 'tableau', columnIndex: 0, cardIndex: 0 },
+      target: { type: 'foundation', suit: 'hearts' },
+    })
+
+    expect(next).toBe(state)
+    expect(next.autoQueue).toEqual([{ type: 'draw' }])
+    expect(next.isAutoCompleting).toBe(true)
+  })
+
+  it('keeps a running auto queue alive when a scrub lands on the current index', () => {
+    const state = createTestState({
+      tableau: tableauWith([card('hearts', 5)]),
+      autoQueue: [{ type: 'draw' }],
+      isAutoCompleting: true,
+    })
+
+    const next = klondikeReducer(state, { type: 'SCRUB_TO_INDEX', index: 0 })
+
+    expect(next).toBe(state)
+    expect(next.autoQueue).toEqual([{ type: 'draw' }])
+    expect(next.isAutoCompleting).toBe(true)
+  })
+
   it('sets the win flag when the queue completes all foundations', () => {
     const state = createTestState({
       foundations: {
