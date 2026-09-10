@@ -40,6 +40,7 @@ import { useSolvableDealSelector } from './useSolvableDealSelector'
 import { useCelebrationController } from './useCelebrationController'
 import { useUndoScrubber } from './useUndoScrubber'
 import { useCardDrag } from './useCardDrag'
+import { useDragSelfTest } from './useDragSelfTest'
 import { useDemoGameLauncher, type LaunchDemoGameOptions } from './useDemoGameLauncher'
 import { useAutoQueueRunner } from './useAutoQueueRunner'
 import type { KlondikeGameViewProps } from '../components/KlondikeGameView'
@@ -562,6 +563,15 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     [performDealAgain, preferredDrawCount]
   )
 
+  // Dev-only drag self-test behind soli://?dragtest=1 (card-drag-and-drop plan).
+  // Lives here so it can read the live board + measured layouts; it runs its cases
+  // on synthetic boards, so it never dispatches into the player's game.
+  const runDragSelfTest = useDragSelfTest({
+    stateRef,
+    layouts: absoluteCardLayerLayouts,
+    cardMetrics,
+  })
+
   const { handleLaunchDemoGame } = useDemoGameLauncher({
     stateRef,
     dispatch,
@@ -591,6 +601,7 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     // ?celebration= preview now lives in useCelebrationController (Story 5) —
     // the old useKlondikeGame-local triggerCelebrationForTesting was removed.
     startCelebrationPreview,
+    runDragSelfTest,
   })
 
   // Triggers the invalid-move wiggle animation for the provided selection.
