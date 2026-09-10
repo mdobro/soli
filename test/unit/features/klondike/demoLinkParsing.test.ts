@@ -61,6 +61,32 @@ describe('parseSettingsLinkParam', () => {
     })
   })
 
+  it('parses the rewind-to-winnable key and its long spelling', () => {
+    expect(parseSettingsLinkParam('rewind:on')).toEqual({
+      rewindToWinnable: true,
+      warningUpdates: [],
+      ignoredPairs: [],
+    })
+    expect(parseSettingsLinkParam('rewindToWinnable:off')).toEqual({
+      rewindToWinnable: false,
+      warningUpdates: [],
+      ignoredPairs: [],
+    })
+    // The realistic verification link: warning mode + rewind in one go.
+    expect(parseSettingsLinkParam('warnings:unwinnable,rewind:on')).toEqual({
+      rewindToWinnable: true,
+      warningUpdates: [{ set: 'unwinnable' }],
+      ignoredPairs: [],
+    })
+  })
+
+  it('ignores a rewind pair with a junk value', () => {
+    expect(parseSettingsLinkParam('rewind:maybe')).toEqual({
+      warningUpdates: [],
+      ignoredPairs: ['rewind:maybe'],
+    })
+  })
+
   it('lets a later hintButton pair override the hints alias', () => {
     expect(parseSettingsLinkParam('hints:on,hintButton:off')).toEqual({
       hintButton: false,

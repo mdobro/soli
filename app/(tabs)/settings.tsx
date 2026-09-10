@@ -15,6 +15,7 @@ import { useDrawerOpener } from '../../src/navigation/useDrawerOpener'
 import {
   animationPreferenceDescriptors,
   hintButtonPreference,
+  rewindToWinnablePreference,
   statisticsPreferenceDescriptors,
   useSettings,
 } from '../../src/state/settings'
@@ -31,6 +32,7 @@ export default function SettingsScreen() {
     setAutoUpEnabled,
     setWarningMode,
     setHintButtonEnabled,
+    setRewindToWinnableEnabled,
     setDeveloperMode,
     setStatisticsPreference,
   } = useSettings()
@@ -90,6 +92,15 @@ export default function SettingsScreen() {
             <WarningModePreference
               value={state.hints.warningMode}
               onValueChange={setWarningMode}
+            />
+            {/* Placed directly after the warning select on purpose: the rewind
+                action only ever appears while one of those warnings is
+                showing, so the two rows read as a pair. */}
+            <DescribedSwitchRow
+              label={rewindToWinnablePreference.label}
+              description={rewindToWinnablePreference.description}
+              value={state.hints.rewindToWinnable}
+              onValueChange={setRewindToWinnableEnabled}
             />
           </FieldGroup.Section>
 

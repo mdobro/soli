@@ -67,6 +67,7 @@ type UseDemoGameLauncherOptions = {
   // mode (see resolveWarningLinkUpdate).
   setWarningMode: (mode: WarningMode | ((current: WarningMode) => WarningMode)) => void
   setHintButtonEnabled: (enabled: boolean) => void
+  setRewindToWinnableEnabled: (enabled: boolean) => void
   resetUndoHintForTesting: () => void
   dealNewGameForTesting: () => void
   startGameFromExactDeal: (exactId: ExactDealId, drawCount?: DrawCount) => void
@@ -182,6 +183,7 @@ export type SettingsLinkUpdates = {
   autoUp?: boolean
   solvableOnly?: boolean
   hintButton?: boolean
+  rewindToWinnable?: boolean
   warningUpdates: WarningLinkUpdate[]
   ignoredPairs: string[]
 }
@@ -261,6 +263,16 @@ export const parseSettingsLinkParam = (raw: string): SettingsLinkUpdates => {
         updates.hintButton = parsed
         return
       }
+    } else if (key === 'rewind' || key === 'rewindtowinnable') {
+      // Rewind-to-winnable toggle. Short `rewind` is the hand-typed spelling;
+      // the full setting key is accepted too (same pattern as
+      // `warnings`/`nousefulmoves`). Plain boolean — unlike the warning keys it
+      // has no ladder to resolve against, so it applies directly.
+      const parsed = parseOptionalBooleanParam(value)
+      if (parsed !== null) {
+        updates.rewindToWinnable = parsed
+        return
+      }
     } else if (key === 'warnings') {
       const mode = WARNING_MODE_LINK_VALUES[(value ?? '').toLowerCase()]
       if (mode !== undefined) {
@@ -307,6 +319,7 @@ export const useDemoGameLauncher = ({
   setSolvableGamesOnly,
   setWarningMode,
   setHintButtonEnabled,
+  setRewindToWinnableEnabled,
   resetUndoHintForTesting,
   dealNewGameForTesting,
   startGameFromExactDeal,
@@ -933,6 +946,9 @@ export const useDemoGameLauncher = ({
         if (updates.hintButton !== undefined) {
           setHintButtonEnabled(updates.hintButton)
         }
+        if (updates.rewindToWinnable !== undefined) {
+          setRewindToWinnableEnabled(updates.rewindToWinnable)
+        }
         // Applied in link order through the functional setter so alias
         // semantics see the mode as earlier pairs left it.
         for (const update of updates.warningUpdates) {
@@ -943,6 +959,7 @@ export const useDemoGameLauncher = ({
           autoUp: updates.autoUp,
           solvableOnly: updates.solvableOnly,
           hintButton: updates.hintButton,
+          rewindToWinnable: updates.rewindToWinnable,
           warningUpdates: updates.warningUpdates,
         })
         return
@@ -1182,6 +1199,7 @@ export const useDemoGameLauncher = ({
       setDrawCount,
       setWarningMode,
       setHintButtonEnabled,
+      setRewindToWinnableEnabled,
       setSolvableGamesOnly,
       startGameFromExactDeal,
       startCelebrationPreview,

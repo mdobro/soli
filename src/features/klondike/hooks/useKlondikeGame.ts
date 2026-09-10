@@ -171,6 +171,7 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     setSolvableGamesOnly,
     setWarningMode,
     setHintButtonEnabled,
+    setRewindToWinnableEnabled,
   } = useSettings()
   const { showMoves, showTime } = settingsState.statistics
   const solvableGamesOnly = settingsState.solvableGamesOnly
@@ -578,6 +579,7 @@ export const useKlondikeGame = (): UseKlondikeGameResult => {
     setSolvableGamesOnly,
     setWarningMode,
     setHintButtonEnabled,
+    setRewindToWinnableEnabled,
     resetUndoHintForTesting,
     dealNewGameForTesting,
     startGameFromExactDeal,
