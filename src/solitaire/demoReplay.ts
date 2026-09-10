@@ -222,11 +222,16 @@ const describeGameCard = (card: { suit: Suit; rank: Rank } | null | undefined): 
 export const SCRUBBED_DEMO_STEPS = 80
 export const SCRUBBED_DEMO_SCRUB_INDEX = 40
 
-// All deterministic fixtures below fold playlist entry 0 (`default-0-draw-1`).
-const getReplayFixtureEntry = (): DemoAutoSolvePlaylistEntry => {
-  const entry = getDemoAutoSolvePlaylist()[0]
+// Most deterministic fixtures below fold playlist entry 0 (`default-0-draw-1`).
+// The index is a parameter because the STUCK fixture needs a different deal:
+// entry 0's shortest stuck-AND-unwinnable position is 34 moves off its solution
+// line, while entry 19 (`default-20-draw-1`) has one four moves off its own (see
+// createStuckGameState). Every entry is a solved deal, so a
+// fold prefix is provably winnable whichever one is used.
+const getReplayFixtureEntry = (index = 0): DemoAutoSolvePlaylistEntry => {
+  const entry = getDemoAutoSolvePlaylist()[index]
   if (!entry) {
-    throw new Error('Demo auto-solve playlist is empty.')
+    throw new Error(`Demo auto-solve playlist has no entry ${index}.`)
   }
   return entry
 }
@@ -321,11 +326,19 @@ export const createNearWinGameState = (
   return foldReplayFixture(entry, entry.moves.length - resolved)
 }
 
-// --- "Dead end" fixture (rewind-to-winnable) ---
-// A position the solver can PROVE is lost, whose own history is provably
+// --- "Unwinnable" fixture (rewind-to-winnable) ---
+// Exercises the `unwinnable` WARNING MODE: a position the solver can PROVE is
+// lost while legal moves are still available, whose own history is provably
 // winnable — i.e. a real rewind boundary — reachable from one deep link.
-// Before this existed the only way to reach a dead game was to deal random
+// Before this existed the only way to reach a lost game was to deal random
 // deals until one died, which took minutes and was not reproducible.
+//
+// Naming (2026-09-10, after a device session): the fixtures are named after
+// the warning MODE each one trips, because that is the distinction that
+// matters and it confused a reader once already. This board is lost but NOT
+// stuck — draws and plays remain legal — so only the solver-proven
+// `unwinnable` mode warns here. For the DEFAULT `noUsefulMoves` mode use
+// createStuckGameState below.
 //
 // Recipe: replay 81 primitive steps of playlist entry 0's solution, then play
 // ONE deliberately bad move. Step 81 is a draw that puts the K♠ on the waste;
@@ -337,14 +350,15 @@ export const createNearWinGameState = (
 // VERIFIED against the vendored Rust solver (rust/, `solve_request_json`,
 // budget 2000 ms, 2026-09-10) — both verdicts are pinned as a permanent
 // regression test in rust/soli-solver-ffi/tests/solver_tests.rs
-// (`dead_end_demo_fixture_boundary_is_real`):
+// (`unwinnable_demo_fixture_boundary_is_real`):
 //   after 81 solution steps  → {"status":"solved"}       (0.1 ms)
 //   after the K♠ move        → {"status":"unsolvable"}   (0.1 ms)
 // So the last winnable timeline index is 81 and the current position (82) is
-// dead. Change either constant below and the Rust test must be re-verified.
-export const DEADEND_DEMO_SOLUTION_STEPS = 81
+// dead. Verified on a real phone: `[rewind] boundary=81 timeline=83`.
+// Change either constant below and the Rust test must be re-verified.
+export const UNWINNABLE_DEMO_SOLUTION_STEPS = 81
 // Exported so the tests (and any future device recipe) name the same move.
-export const DEADEND_DEMO_KILLING_MOVE: DemoReplayMove = {
+export const UNWINNABLE_DEMO_KILLING_MOVE: DemoReplayMove = {
   type: 'move',
   card: { suit: 'spades', rank: 13 },
   source: { type: 'waste' },
@@ -356,11 +370,11 @@ export const DEADEND_DEMO_KILLING_MOVE: DemoReplayMove = {
 // so the state carries a real exactId plus an 82-entry moveLog and 82 undo
 // snapshots — the binary search in useRewindToWinnable gets a genuine timeline
 // to search (83 indices → ~7 solver probes).
-export const createDeadEndGameState = (): GameState => {
+export const createUnwinnableGameState = (): GameState => {
   const entry = getReplayFixtureEntry()
-  const state = foldReplayFixture(entry, DEADEND_DEMO_SOLUTION_STEPS)
+  const state = foldReplayFixture(entry, UNWINNABLE_DEMO_SOLUTION_STEPS)
   // Same THROWING validation as the fold: if a regenerated playlist ever left a
   // different card on the waste, this fails loudly instead of silently shipping
   // a fixture that is not actually dead.
-  return applyDemoReplayMoveForValidation(state, DEADEND_DEMO_KILLING_MOVE)
+  return applyDemoReplayMoveForValidation(state, UNWINNABLE_DEMO_KILLING_MOVE)
 }

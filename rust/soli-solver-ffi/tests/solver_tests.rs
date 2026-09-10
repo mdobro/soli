@@ -632,19 +632,19 @@ fn ffi_round_trip_and_null_safety() {
     unsafe { soli_solver_ffi::soli_solver_free_string(std::ptr::null_mut()) };
 }
 
-/// Pins the two verdicts the `?demo=deadend` fixture depends on
-/// (`src/solitaire/demoReplay.ts`, `createDeadEndGameState`): the fixture is a
-/// dead end ONLY if the solver proves the position after its killing move
+/// Pins the two verdicts the `?demo=unwinnable` fixture depends on
+/// (`src/solitaire/demoReplay.ts`, `createUnwinnableGameState`): the fixture is
+/// a dead end ONLY if the solver proves the position after its killing move
 /// unsolvable AND the position before it solvable — otherwise the rewind
 /// boundary the fixture exists to exercise would not exist at all.
 ///
 /// The two request strings are byte-identical copies of the ones pinned in
-/// `test/unit/solitaire/demoReplay.deadend.test.ts`, which asserts that they are
+/// `test/unit/solitaire/demoReplay.unwinnable.test.ts`, which asserts that they are
 /// exactly what `buildSolverRequest` produces for the fixture. So the TS side
 /// pins the boards and this test pins their verdicts; drift on either side
 /// fails a gate instead of silently shipping a fixture that is still winnable.
 #[test]
-fn dead_end_demo_fixture_boundary_is_real() {
+fn unwinnable_demo_fixture_boundary_is_real() {
     // After 81 primitive steps of playlist entry 0's solution (the 81st is the
     // draw that puts the K♠ on the waste). The only empty column is column 2.
     let before_killing_move = r#"{"drawCount":1,"budgetMs":2000,"foundations":{"c":1,"d":0,"h":2,"s":0},"tableau":[{"hidden":[],"visible":["s8","d7","c6"]},{"hidden":[],"visible":[]},{"hidden":["s5","d5"],"visible":["s4","h3","s2"]},{"hidden":["c4","h11"],"visible":["h7"]},{"hidden":["d8","c8","s9","d1"],"visible":["d6","c5","d4","c3","d2"]},{"hidden":["s7","h4","c2","d10","s3"],"visible":["c9"]},{"hidden":["d12","s1","h12","c10","h13","h8"],"visible":["c12"]}],"stock":["d3","h5","d13","s11","d9","d11","s12","h6","s6","c11","c13","c7"],"waste":["h9","s10","h10","s13"]}"#;
