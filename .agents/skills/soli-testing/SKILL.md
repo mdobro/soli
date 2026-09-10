@@ -14,7 +14,7 @@ Single source of truth for testing Soli on devices/simulators. Package/bundle id
    - **Android physical phone (`yarn release`)**: drive by a11y labels; native pan works (scrubber needs no Appium). It is Karim's MAIN phone — data guardrail in section 4.
    - **iOS simulator (`yarn ios`)**: drive by testIDs; zero risk, full wipes allowed (`xcrun simctl uninstall`). Use alone when the phone is unavailable or the test needs destructive resets.
    - Web: not a target (native-only app).
-3. **Fixture**: fresh deal = default launch (`soli:///`) · full stress = auto-solve playlist (`yarn release/ios --auto-solve` after code changes: builds + monitors logs with pass/fail exit; `yarn deeplink 'soli:///?demo=playlist&games=N'` when the installed build is current — no rebuild, watch logs yourself) · undo/redo/scrubber = `yarn scrubtest` · real win + celebration = `yarn nearwin` (play the last move(s) manually) · specific-deal repro = `?deal=<exactId>` · history/stats = `yarn seedhistory`.
+3. **Fixture**: fresh deal = default launch (`soli:///`) · full stress = auto-solve playlist (`yarn release/ios --auto-solve` after code changes: builds + monitors logs with pass/fail exit; `yarn deeplink 'soli:///?demo=playlist&games=N'` when the installed build is current — no rebuild, watch logs yourself) · undo/redo/scrubber = `yarn scrubtest` · real win + celebration = `yarn nearwin` (play the last move(s) manually) · **unwinnable warning / rewind-to-winnable = `yarn deadend`** (never play deals until one dies — that takes minutes and is not reproducible) · specific-deal repro = `?deal=<exactId>` · history/stats = `yarn seedhistory`.
 
 ## 2. Build & run
 
@@ -34,9 +34,10 @@ Parsed by `processDemoLink()` in `src/features/klondike/hooks/useDemoGameLaunche
 | `soli:///?demo=playlist&games=N` | Auto-solve playlist, N games (clamped to 20); `demo=autosolve&games=1` for a single game |
 | `soli://?demo=scrubbed` | **Scrubbed mid-game fixture**: deterministic board, 80 moves scrubbed to index 40 → 40 undos + 40 redos, Auto Up off. `&steps=S&scrub=K` for other depths (clamped; defaults keep the pinned card labels valid) |
 | `soli://?demo=nearwin&left=N` | **Near-win fixture**: solution replayed to N moves before completion (default 1), Auto Up off — finish manually for a REAL win + celebration |
+| `soli://?demo=deadend` | **Dead-end fixture**: same deal replayed 81 solution steps, then one killing move (K♠ into the only empty column), Auto Up off. The position is solver-PROVEN `unsolvable` and the position before the killing move `solved`, so a real rewind boundary sits at timeline index 81 (82 moves played). Parameterless — the pinned verdicts are the whole point. Pair with `?set=warnings:unwinnable,rewind:on`; in `unwinnable` mode the warning fires ~600 ms after load |
 | `soli://?deal=<exactId>&draw=N` | New game from an exact deal id (`E1_...`) — bug repro, hand-crafted scenarios. `draw` optional; invalid id devLogged + ignored |
 | `soli://?set=drawCount:3,autoUp:off,solvableOnly:on,warnings:stuck,hintButton:on,rewind:on` | Apply settings without UI taps (`drawCount` 1–5; booleans on/off: `autoUp`, `solvableOnly`, `hintButton`, `rewind`; `warnings:off\|stuck\|unwinnable` = warning-mode select [stuck = "no more useful moves", the default]. Aliases: `hints` → `hintButton`, `rewindToWinnable` → `rewind`; round-2 `stuckWarning`/`unwinnableWarning:on\|off` map into the select without downgrading a stronger mode). Unknown pairs devLogged + skipped, rest applies |
-| `soli://?set=warnings:unwinnable,rewind:on` | **Rewind to last winnable move** in one link: `rewind` alone does nothing visible — the action only appears while a warning is outstanding, so the warning mode must be on too. Default OFF |
+| `soli://?set=warnings:unwinnable,rewind:on` | **Rewind to last winnable move** in one link: `rewind` alone does nothing visible — the action only appears while a warning is outstanding, so the warning mode must be on too. Default OFF. Then `yarn deadend` for a board that is already provably lost |
 | `soli://?reset=undoHint` / `?reset=game` | Targeted resets, section 4 |
 | `soli://?celebration=<modeId\|random>` | Celebration overlay on the current board WITHOUT winning (note below). With `&screenshot=1` the header shows synthetic MOVES/TIME; `&moves=N&time=SECONDS` overrides them |
 | `soli://demo-game` | Old handcrafted demo (rarely useful — no undo history) |
@@ -51,6 +52,7 @@ Delivery — always use `yarn deeplink`. **Default target: the connected Android
 | `yarn celebration [modeId]` | `?celebration=<modeId\|random>` | warm |
 | `yarn scrubtest [steps] [scrub]` | `?demo=scrubbed[&steps=S&scrub=K]` | **cold** (a stale warm demo run would overwrite the fixture) |
 | `yarn nearwin [left]` | `?demo=nearwin[&left=N]` | **cold** (same reason) |
+| `yarn deadend` | `?demo=deadend` | **cold** (same reason) |
 | `yarn seedhistory [clear]` | `?seedHistory=default\|clear` | warm |
 | `yarn deeplink '<soli:// url>'` | any raw catalog link | warm |
 
@@ -143,6 +145,7 @@ Enter the deterministic fixture first: `yarn scrubtest` (index 40 of 80).
 | Wireless adb dropped / phone dozed | `scripts/android-ready.sh` (reconnect + pin + wake + unlock in one shot); never hand-roll loops |
 | Terminal file says a build is running but nothing happens | Terminal metadata can be stale; trust `/tmp/soli-build.lock` and `ps` |
 | Deep link seems ignored | You bypassed the wrapper — `yarn deeplink` adds the retry nonce + cold force-stop; raw links need `#retry-N` / manual force-stop |
+| A `?set=` key "did not apply" | Check the log first: `[Demo] Settings link applied {...}` lists everything that parsed, `[Demo] Settings link: ignored unknown pair "<pair>"` everything that did not — that answers "did it parse?" without opening Settings. Then check you are not judging a key by an effect it does not have: `warnings:unwinnable` changes nothing visible until the solver proves the CURRENT position dead (use `yarn deadend`), and an in-progress game keeps the drawCount it was DEALT with. Third: a `?set=` link's write is async, so a cold fixture link fired immediately after (`yarn scrubtest`/`nearwin`/`deadend` force-stop by default) can drop it — settle a second, or send `?set=` first and verify before the fixture link |
 | iOS sim deep links suddenly ALL dead (openurl silent, no alert, XCTest main-thread timeouts) | App process wedged — seen after `simctl uninstall`+`install`+`launch` over a running app. `xcrun simctl terminate <udid> ch.karimattia.soli && xcrun simctl launch ...` fixes it immediately; restart the app BEFORE debugging the links themselves |
 | Signature mismatch on Android install | Check `SOLI_UPLOAD_*` in `.env` first — uninstalling wipes real history, last resort (section 4) |
 | Gradle fails in ~1 s with "Could not start 'node'" | Stale Gradle daemon caching a dead env: `cd android && ./gradlew --stop`, rerun |

@@ -4,14 +4,17 @@
 
 > you can press and hold undo to go back to the move where you can still solve the deck, but this is not clear. Can we improve the UX somehow?
 
+> [2026-09-10, after the first five commits] Add a demo fixture `soli://?demo=deadend` that deals a deterministic game and replays it into a position that is *provably unwinnable*, while the earlier part of its history is *provably winnable*, so a rewind boundary genuinely exists and the feature can be exercised in one link. The dead end must be real, not assumed: verify with the Rust solver that the position after the bad move(s) is `unsolvable` and the position before them is `solved`. Plus: `?set=warnings:unwinnable` did not apply on a physical phone while `hintButton:on` and `rewind:on` in the same link did — investigate `resolveWarningLinkUpdate` and the `?set=` parsing, fix it if it is a bug, and say what else could explain the device behaviour if it is not.
+
 ## Summary
 
-Two independent changes on branch `feat/rewind-to-last-winnable-move`, in five commits.
+Three independent changes on branch `feat/rewind-to-last-winnable-move`, in nine commits.
 
 1. **Rewind to last winnable move** (opt-in setting, default off). While a solver-proven warning is outstanding, the app binary-searches the game's timeline for the deepest position it can still *prove* winnable, marks it on the scrubber track, and offers one pill that jumps straight there via the existing `SCRUB_TO_INDEX`.
 2. **The undo-scrubber hint schedule was loosened** from lifetime > 50 / streaks 10-20-30 to lifetime > 8 / streaks 3-6-9, because the old schedule almost never fired — which is *why* the player in the prompt had never learned the real gesture.
+3. **A solver-verified dead-end fixture** (`soli://?demo=deadend`, `yarn deadend`). Every other interesting state in this app has a fixture; the one state this feature actually needs did not, so reaching it meant dealing random games until one died. The fixture replays 81 steps of the known solution and then plays one deliberately bad move, with both solver verdicts pinned as tests.
 
-Status: code complete, all three gates green (`yarn typecheck && yarn lint && yarn jest` → 36 suites, 388 tests). **Not yet verified on a device or simulator** — see "Testing".
+Status: code complete, all three gates green (`yarn typecheck && yarn lint && yarn jest` → 37 suites, 398 tests) plus `cargo test -p soli-solver-ffi` (17 tests). **Not yet verified on a device or simulator** — see "Testing".
 
 ## Description
 
@@ -59,7 +62,7 @@ Why it is nice: it turns the most frustrating moment in the game ("you already l
 
 ## Dependencies
 
-None new. No `package.json` change.
+None new. The only `package.json` change is the `yarn deadend` script (a `scripts/deeplink.js` shortcut, no dependency).
 
 ## UX/UI Considerations
 
@@ -73,7 +76,7 @@ None new. No `package.json` change.
 
 Reused: `DescribedSwitchRow` (settings row), `GameNoticeBubble` / `UndoHintBubble` (unchanged — no third bubble style invented), `UndoScrubber` (pill + marker added), the existing `SCRUB_TO_INDEX` action.
 
-New: `src/solitaire/winnableBoundary.ts` (pure search), `src/features/klondike/scrubberMarker.ts` (pure geometry), `src/features/klondike/hooks/useRewindToWinnable.ts` (the async driver).
+New: `src/solitaire/winnableBoundary.ts` (pure search), `src/features/klondike/scrubberMarker.ts` (pure geometry), `src/features/klondike/hooks/useRewindToWinnable.ts` (the async driver), `createDeadEndGameState` in the existing `src/solitaire/demoReplay.ts` (the fixture — deliberately NOT a new module: it reuses `getReplayFixtureEntry` / `foldReplayFixture` / `applyDemoReplayMoveForValidation` alongside the scrubbed and near-win fixtures).
 
 ## How to fetch data, how to cache
 
@@ -107,7 +110,11 @@ The result is cached in hook state keyed on the **warning era**, not the positio
 8. [x] Loosen the undo-hint schedule (own commit) + update its plan doc and the testing skill.
 9. [x] Testing skill: `?set=rewind` row, the combined verification link, a11y matrix rows.
 10. [x] This plan doc.
-11. [ ] **Device/simulator verification by the orchestrator** — see "Testing".
+11. [x] Dead-end fixture `createDeadEndGameState` + solver verification + unit tests + a pinned Rust test.
+12. [x] `?demo=deadend` deep link, `yarn deadend` shortcut, `scripts/deeplink.js` entry.
+13. [x] Testing skill: `?demo=deadend` catalog row, shortcut row, decision-tree entry, `?set=` troubleshooting row.
+14. [x] Investigate the `?set=warnings:unwinnable` device report (see "Identified issues" #5) + regression tests.
+15. [ ] **Device/simulator verification by the orchestrator** — see "Testing".
 
 ## Plan: Files to modify
 
@@ -117,13 +124,19 @@ Modified: `src/state/settings.tsx`, `app/(tabs)/settings.tsx`, `src/features/klo
 
 ## Files actually modified
 
-Exactly as planned above. Five commits:
+Exactly as planned above. Nine commits:
 
 1. `Add pure winnable-boundary binary search`
 2. `Add the "Rewind to winnable" setting and its deep-link key`
 3. `Offer "rewind to last winnable move" while a warning is showing`
 4. `Loosen the undo-scrubber hint schedule so it actually fires`
 5. `Document rewind-to-winnable and its verification recipe`
+6. `Add a solver-verified "dead end" demo fixture`
+7. `Reach the dead-end fixture via soli://?demo=deadend`
+8. `Pin the ?set=warnings:unwinnable link path end to end`
+9. `Document the dead-end fixture and the ?set=warnings finding`
+
+The dead-end round added: `src/solitaire/demoReplay.ts` (`createDeadEndGameState`), `test/unit/solitaire/demoReplay.deadend.test.ts` (new), `rust/soli-solver-ffi/tests/solver_tests.rs` (`dead_end_demo_fixture_boundary_is_real`), `src/features/klondike/hooks/useDemoGameLauncher.ts`, `package.json`, `scripts/deeplink.js`, `test/unit/features/klondike/demoLinkParsing.test.ts`, `.agents/skills/soli-testing/SKILL.md`, this doc.
 
 ## Intermediary learnings
 
@@ -142,7 +155,13 @@ So the report is not a bug report and not a request for a tooltip. It is a playe
 
 **5. Mutation testing caught a test that proved nothing.** The first `unknown`-handling fixture placed the unproven position at a spot the binary search never probes, so the case passed against an implementation that treated `unknown` as a verdict. Fixtures now put the `?` exactly on a search midpoint, and the suite is verified to fail against three mutations (unknown-as-unwinnable, unknown-as-winnable, dropped probe cache). Lesson worth keeping: a test for a *search* has to be written against the search's actual probe order.
 
-**6. The undo-hint's 3/6/9 schedule is not a new guess.** The v2 Android smoke (2026-07-07) was run at exactly lifetime > 0 / streaks 3/6/9 and all seven checks passed. The shipped 50 / 10-20-30 values were the conservative guess that was never validated as a *discoverable* schedule.
+**6. A dead end has to be searched for, not designed — and one bad move is enough at the right moment.** The first instinct ("bury a needed card") is unworkable by hand: at 80 steps into playlist entry 0 the board has exactly **two** legal non-draw moves, so the space of "deliberately bad" moves is tiny and none of them kills anything. The method that worked was mechanical: enumerate every legal move (draws included) breadth-first from the fold point, dump each resulting board as a `buildSolverRequest` JSON, and let the Rust solver rank them. That found a 2-step kill on the first pass, and the killing move turned out to be one a *real player would make* — the K♠ into the only empty column. Filling that column blocks the sole route to unload the column hiding the A♠, and the solver flips from `solved` to `unsolvable` on that one move. Both throwaway harnesses (a jest generator, a `cargo run --example` verdict printer) were deleted; what stayed is the pinned pair of verdicts.
+
+**7. Pinning the verdicts needs BOTH sides, because neither half can catch drift alone.** The TS fixture throws on playlist drift (`applyDemoReplayMoveForValidation`), but it cannot prove the resulting board is dead — the solver is not reachable from jest. The Rust test can prove a board is dead, but it only knows the board someone typed into it. So the TS suite pins the exact `buildSolverRequest` JSON the fixture produces and the Rust suite pins that same JSON's verdict: drift on either side fails a gate. Pinning only the Rust half would have left a fixture that could quietly become winnable again.
+
+**8. `?set=warnings:unwinnable` is NOT a parsing bug — the whole link path is correct, end to end.** The device report was investigated by driving the *real* `processDemoLink` (not just the pure parser) with the real URL, and it applies `warningMode: 'unwinnable'` correctly with the `#retry-<nonce>` fragment present, with the key first, middle or last in the list, and via the `unwinnableWarning:on` alias from the default mode. `resolveWarningLinkUpdate` is also correct in both directions: `{set: <mode>}` is unconditional, and every alias row of the truth table was re-derived. The refuse-to-downgrade rule only ever guards `stuckWarning:*`, never an upgrade to `unwinnable`. See "Identified issues" #5 for what can explain the device observation instead — the leading candidate is that `warnings:unwinnable` is the one key in that link with **no immediately visible effect**, which is exactly the gap the dead-end fixture closes.
+
+**9. The undo-hint's 3/6/9 schedule is not a new guess.** The v2 Android smoke (2026-07-07) was run at exactly lifetime > 0 / streaks 3/6/9 and all seven checks passed. The shipped 50 / 10-20-30 values were the conservative guess that was never validated as a *discoverable* schedule.
 
 ## Identified issues
 
@@ -152,18 +171,21 @@ So the report is not a bug report and not a request for a tooltip. It is a playe
 | 2 | In `noUsefulMoves` mode the boundary can be far back, so the jump may feel bigger than expected. | Open — needs a device opinion. One-line fix available (gate on `unwinnable` only). |
 | 3 | The marker is only visible while the scrub overlay is up (i.e. while dragging), so a player who never drags only ever sees the pill. | Accepted: the pill is the discoverable surface; the marker is for players already in the gesture. |
 | 4 | If a game is already unwinnable at the deal (possible with "Solvable deals" off), the search proves nothing winnable and the feature shows nothing. | Correct by design — verify it on device (test 6 below). |
+| 5 | Device report: `?set=warnings:unwinnable` "did not apply" while `hintButton:on` / `rewind:on` in the same link did. | **No bug found; no fix made** (learning 8). The link path is now covered end to end by `demoLinkParsing.test.ts` (`?set= links through processDemoLink`). Remaining explanations, most likely first: (a) it *did* apply, but `warnings:unwinnable` is the only key in that link with no immediately visible effect — the warning fires only once the solver proves the CURRENT position dead, which on a live deal may never happen; (b) the settings write is async (`Storage.setItem`) and the fixture shortcuts force-stop by default, so a cold link fired right after a `?set=` link can drop the pending write — that would lose all three keys, but a re-check after only the *visible* two had already been confirmed would read as "warnings didn't apply"; (c) the phone ran a build older than the `warnings:` key. Diagnosis recipe added to the testing skill's troubleshooting table (the `[Demo] Settings link applied` / `ignored unknown pair` log lines answer "did it parse?" directly). Reopen with a `[SoliDev]` log capture if it recurs. |
 
 ## Testing
 
-**Gates (run after every step, all green):** `yarn typecheck && yarn lint && yarn jest` → 36 suites, 388 tests.
+**Gates (run after every step, all green):** `yarn typecheck && yarn lint && yarn jest` → 37 suites, 398 tests. The dead-end fixture also has a Rust gate: `cd rust && cargo test -p soli-solver-ffi` → 17 tests (not part of the JS gates; run it if you touch the fixture constants).
 
 Unit coverage added:
 
 - `test/unit/solitaire/winnableBoundary.test.ts` — monotone timeline; boundary at index 0; boundary at the last index; all-winnable; all-unwinnable; empty timeline (zero solver calls); binary-search-not-scan (63 positions in ≤ 8 probes); `unknown` widening left and right; never claiming an unproven index; never re-probing a cached `unknown`; probe budget honoured. Verified to fail against three mutations.
 - `test/unit/features/klondike/scrubberMarker.test.ts` — marker centres on the thumb centre for the same index; both ends of the travel; linear in between; clamping; degenerate track width / slider max. Verified to fail against three mutations.
 - `test/unit/state/settingsHints.test.ts` — new toggle's default, round-trip, `current`-not-`DEFAULT` fallback, junk values, and that pre-feature payloads (including legacy `hintsEnabled:true`) leave it off.
-- `test/unit/features/klondike/demoLinkParsing.test.ts` — `rewind:on` / `rewindToWinnable:off` / combined with `warnings:`, and junk values landing in `ignoredPairs`.
+- `test/unit/features/klondike/demoLinkParsing.test.ts` — `rewind:on` / `rewindToWinnable:off` / combined with `warnings:`, and junk values landing in `ignoredPairs`. Plus (issue #5) an end-to-end `?set= links through processDemoLink` block that renders the real hook and delivers a real `soli://` URL: `warnings:unwinnable` next to the other keys, with the `#retry-<nonce>` fragment, with the key not last, and through the `unwinnableWarning:on` alias.
 - `test/unit/features/klondike/undoHint.test.ts` — updated to the 3/6/9 schedule, with the constants pinned directly so a silent drift back to 10/20/30 fails.
+- `test/unit/solitaire/demoReplay.deadend.test.ts` — the fixture's recipe constants, deal identity, Auto Up off, timeline depths (82 snapshots / 82 move-log entries), determinism, the king landing in the only empty column, the replay validation throwing when the killing move is applied one step early, and the exact `buildSolverRequest` JSON for both boards.
+- `rust/soli-solver-ffi/tests/solver_tests.rs` — `dead_end_demo_fixture_boundary_is_real` pins `solved` before the killing move and `unsolvable` after it.
 
 ### What the orchestrator must verify on the simulator
 
@@ -172,11 +194,13 @@ Not verified by this branch — the agent that wrote it was code-and-unit-tests 
 **Setup**
 
 ```bash
-yarn deeplink 'soli://?set=warnings:unwinnable,rewind:on,solvableOnly:on,drawCount:3' --ios
-yarn deeplink 'soli://?reset=game' --ios
+yarn deeplink 'soli://?set=warnings:unwinnable,rewind:on' --ios
+yarn deadend --ios
 ```
 
-`solvableOnly:on` matters: it guarantees the deal itself *is* winnable, so a boundary is guaranteed to exist once you kill the game. Then play badly on purpose (bury cards, empty the stock, take foundation plays you will need back) until the warning bubble appears. In `unwinnable` mode the background check runs after every move, so it fires ~600 ms after the killing move.
+`yarn deadend` replaces the old recipe ("play badly on purpose until the warning appears"), which took minutes and produced a different board every time. The fixture lands on a position the solver has been *proven* to call `unsolvable`, on a history whose step-81 position is *proven* `solved` — so the warning fires ~600 ms after load (in `unwinnable` mode the background check runs on every position change) and the boundary the Rewind pill offers must be **index 81** of an 83-index timeline. Anything else is a bug in the search, not in the fixture.
+
+The fixture is deliberately parameterless and the solver verdicts behind it are pinned in both suites (`demoReplay.deadend.test.ts`, `dead_end_demo_fixture_boundary_is_real`), so `boundary=81` is a hard expectation, not an observation. `?set=` first, fixture second: the fixture shortcut force-stops the app, and the settings write is async.
 
 **a11y handles**
 
@@ -192,13 +216,13 @@ yarn deeplink 'soli://?reset=game' --ios
 
 **Checks**
 
-1. **Off by default.** Fresh install / `?set=rewind:off`: kill a game with the warning on → warning shows, **no** Rewind pill, no marker, no `[rewind]` log line.
-2. **Pill appears.** With `rewind:on`, kill a game → warning bubble **and** the Rewind pill in the dock's left half. Confirm one `[rewind] boundary=N timeline=M` line with `N < M`.
+1. **Off by default.** `?set=warnings:unwinnable,rewind:off`, then `yarn deadend` → warning shows, **no** Rewind pill, no marker, no `[rewind]` log line.
+2. **Pill appears.** With `rewind:on`, `yarn deadend` → warning bubble **and** the Rewind pill in the dock's left half. The log line must read exactly `[rewind] boundary=81 timeline=83` — the fixture's boundary is pinned, so any other number is a real bug in the search.
 3. **The jump.** Tap `rewind-to-winnable` → the board changes, the warning bubble disappears, the pill disappears, the marker disappears. Then tap Undo/Redo: undo and redo still work normally from the landed position (this is what "behaves exactly like a manual scrub" means).
 4. **It really is winnable.** After the jump, turn the Hint button on (`?set=hintButton:on`) and press Hint — it must return a *move* hint, not the "No winning moves left" re-affirm. This is the check that the boundary is real.
-5. **The marker.** Kill a game again, then start a scrub drag from the Undo pill (iOS: Appium `node scripts/ios-scrub.js`, per skill section 6 — agent-device cannot pan on iOS). While dragging, the amber tick must be visible on the track and the track's a11y label must read `…, last winnable move K` with the same K as the log line. Dragging until the thumb covers the tick must land on index K.
+5. **The marker.** `yarn deadend` again, then start a scrub drag from the Undo pill (iOS: Appium `node scripts/ios-scrub.js`, per skill section 6 — agent-device cannot pan on iOS). While dragging, the amber tick must be visible on the track and the track's a11y label must read `…, last winnable move 81`. Dragging until the thumb covers the tick must land on index 81.
 6. **Honest degradation.** `?set=solvableOnly:off`, then deal until you hit a deal that warns immediately at move 0 (roughly one in five). Expect: warning shows, **no** pill, no marker, `[rewind] boundary=- timeline=1`. The feature must show nothing rather than claim a boundary.
-7. **Hint-slot swap.** With both `hintButton:on` and `rewind:on`: before the warning the Hint pill is in the left slot; while the warning is up the Rewind pill replaces it; after the rewind the Hint pill returns.
+7. **Hint-slot swap.** With both `hintButton:on` and `rewind:on`: on a fresh deal the Hint pill is in the left slot; after `yarn deadend` the Rewind pill replaces it; after the rewind the Hint pill returns.
 8. **Undo hint (independent of the rest).** `yarn deeplink 'soli://?reset=undoHint' --ios`, then tap Undo 3× in a row → the hint bubble appears with the "Drag the Undo button sideways…" copy (`undo-hint`). New deal, 6 in a row → hint 2. New deal, 9 in a row → hint 3.
 
 **Regression watch:** with the setting off, the dock must render exactly as before (Hint pill placement, scrub overlay, warning bubble) — the whole feature is inert when off.
@@ -210,3 +234,5 @@ yarn deeplink 'soli://?reset=game' --ios
 3. **Offer the rewind without a warning**, e.g. from the scrubber itself. Pro: helps players who play with warnings off. Con: it would mean running the solver during normal play (the exact battery cost the warning modes were designed to avoid) and it leaks winnability to players who deliberately turned warnings off. Recommendation: no.
 4. **Gate on `unwinnable` mode only** if the long jumps in `noUsefulMoves` mode read badly (issue #2).
 5. **Re-check the undo-hint schedule after real usage.** 3/6/9 is a deliberate loosening; if the bubble starts feeling naggy, the first lever is `UNDO_HINT_MAX_SHOWINGS`, not the streaks.
+6. **A second dead-end fixture in `noUsefulMoves` mode.** `?demo=deadend` is dead but not *stuck* — draws are still legal — so it only triggers the warning in `unwinnable` mode; the classic mode warns at the fruitless recycle-flip, which this board has not reached. Pro: would let the `noUsefulMoves` path (and issue #2, the long-jump concern) be tested from a link too. Con: a second pinned board and a second pair of solver verdicts to maintain, for a mode whose warning path is already covered by the existing hint suites. Recommendation: only if issue #2 needs a device answer — otherwise reach that state by draining the stock from `?demo=deadend` by hand.
+7. **Log the resolved warning mode on `?set=` links.** Today `[Demo] Settings link applied` logs the *requested* `warningUpdates`, not the mode they resolved to, so an alias link's outcome cannot be read off the log (issue #5). Pro: makes "did it apply?" answerable from `--logs` alone. Con: the resolved value is only known inside the functional setter, so logging it accurately means passing the current mode into the launcher just for a log line. Recommendation: only if issue #5 recurs — the existing log already proves the key *parsed*, which is the part that was actually in doubt.
