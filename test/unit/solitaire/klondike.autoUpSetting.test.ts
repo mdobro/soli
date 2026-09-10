@@ -7,6 +7,7 @@ import {
   type Suit,
   klondikeReducer,
 } from '../../../src/solitaire/klondike'
+import { DRAW_COUNT_OPTIONS } from '../../../src/solitaire/drawCount'
 
 let cardCounter = 0
 
@@ -50,6 +51,19 @@ const createEmptyState = (overrides: Partial<GameState> = {}): GameState => ({
 
 const createPileThrough = (suit: Suit, topRank: Rank): Card[] =>
   Array.from({ length: topRank }, (_, index) => card(suit, (index + 1) as Rank))
+
+// Drives the queue the way useAutoQueueRunner does, minus the timers. The guard is
+// deliberately generous and asserted on: a run that never stops is itself the bug.
+const drainAutoQueue = (state: GameState): GameState => {
+  let current = state
+  let guard = 0
+  while (current.isAutoCompleting && guard < 100) {
+    current = klondikeReducer(current, { type: 'ADVANCE_AUTO_QUEUE' })
+    guard += 1
+  }
+  expect(guard).toBeLessThan(100)
+  return current
+}
 
 describe('Auto Up setting', () => {
   beforeEach(() => {
@@ -324,6 +338,129 @@ describe('Auto Up setting', () => {
     // No queue means no scheduling push either — an unlogged history push is the
     // replay-drift hazard the R2 review batch fixed elsewhere.
     expect(nextState.history).toHaveLength(0)
+  })
+
+  // The acceptance criterion is "in EVERY draw mode", but the tests above only
+  // spell out Draw 1, 2 and 3. This is the same finishable board in all five
+  // modes, played out to an empty board — a draw count creeping back into the
+  // gate (or into planAutoActions' drawing) fails here for 2, 4 and 5 the way it
+  // did before the fix. The fixture is draw-count agnostic on purpose: only one
+  // card is ever in the stock, so every mode draws exactly it.
+  DRAW_COUNT_OPTIONS.forEach((drawCount) => {
+    it(`starts and finishes a run on a finishable board in Draw ${drawCount}`, () => {
+      const state = createEmptyState({
+        autoUpEnabled: false,
+        drawCount,
+        // 3♥ only becomes playable after A♥ (waste) and 2♥ (stock) have gone up,
+        // so the run has to interleave tableau, waste and stock.
+        tableau: [[card('hearts', 3)], ...Array.from({ length: 6 }, () => [])],
+        waste: [card('hearts', 1)],
+        stock: [card('hearts', 2, false)],
+      })
+
+      const scheduled = klondikeReducer(state, {
+        type: 'SET_AUTO_UP_ENABLED',
+        enabled: true,
+      })
+
+      expect(scheduled.isAutoCompleting).toBe(true)
+
+      const finished = drainAutoQueue(scheduled)
+
+      expect(finished.isAutoCompleting).toBe(false)
+      expect(finished.autoQueue).toHaveLength(0)
+      expect(finished.stock).toHaveLength(0)
+      expect(finished.waste).toHaveLength(0)
+      expect(finished.tableau.every((column) => column.length === 0)).toBe(true)
+      expect(finished.foundations.hearts.map((pileCard) => pileCard.rank)).toEqual([
+        1, 2, 3,
+      ])
+    })
+  })
+
+  // Safety envelope for the "stop at a second recycle with no move in between"
+  // bound in planAutoActions. The bound itself is invisible from the outside (a
+  // hopeless plan is discarded whether it is 3 actions or 500), but tightening it
+  // by one step IS visible: this board is only finishable *because* the planner is
+  // allowed to recycle once, and forbidding that recycle silently stops Auto Up on
+  // every endgame whose last cards sit in the waste in the wrong order.
+  it('plans a recycle when the run only becomes possible after one', () => {
+    const state = createEmptyState({
+      autoUpEnabled: false,
+      drawCount: 1,
+      // Waste top is 2♥ with an empty hearts foundation: nothing is playable until
+      // the waste is recycled back into the stock and redrawn ace first.
+      waste: [card('hearts', 1), card('hearts', 2)],
+      stock: [],
+    })
+
+    const scheduled = klondikeReducer(state, {
+      type: 'SET_AUTO_UP_ENABLED',
+      enabled: true,
+    })
+
+    expect(scheduled.isAutoCompleting).toBe(true)
+    expect(scheduled.autoQueue[0]).toEqual({ type: 'recycle' })
+
+    const finished = drainAutoQueue(scheduled)
+
+    expect(finished.stock).toHaveLength(0)
+    expect(finished.waste).toHaveLength(0)
+    expect(finished.foundations.hearts.map((pileCard) => pileCard.rank)).toEqual([1, 2])
+  })
+
+  // Pins the documented limitation of the greedy planner (see the comment in
+  // scheduleAutoQueue and the "Open questions" section of the auto-complete
+  // reliability doc): it knows tableau-top → foundation, waste-top → foundation and
+  // waste-top → tableau, and nothing else. This board is finishable by hand and the
+  // planner refuses it — deliberately. If someone teaches the planner tableau →
+  // tableau moves, this test failing is the intended signal to update the doc, not
+  // a regression to paper over.
+  it('refuses an all-face-up board that only a tableau to tableau move can finish', () => {
+    const state = createEmptyState({
+      autoUpEnabled: false,
+      drawCount: 1,
+      foundations: {
+        hearts: createPileThrough('hearts', 5),
+        diamonds: [],
+        clubs: createPileThrough('clubs', 3),
+        spades: [],
+      },
+      // 5♣ sits on the 4♣ the clubs foundation is waiting for. Moving 5♣ onto the
+      // red 6 frees 4♣, and then 5♣ and 6♥ both go up — but only a human can make
+      // that first move.
+      tableau: [
+        [card('clubs', 4), card('clubs', 5)],
+        [card('hearts', 6)],
+        ...Array.from({ length: 5 }, () => []),
+      ],
+    })
+
+    const enabled = klondikeReducer(state, { type: 'SET_AUTO_UP_ENABLED', enabled: true })
+
+    expect(enabled.isAutoCompleting).toBe(false)
+    expect(enabled.autoQueue).toHaveLength(0)
+    expect(enabled.history).toHaveLength(0)
+
+    // ...and the board really was finishable: make the one move the planner will
+    // not make and the very same gate schedules a run that clears it.
+    const afterPlayerMove = klondikeReducer(enabled, {
+      type: 'APPLY_MOVE',
+      selection: { source: 'tableau', columnIndex: 0, cardIndex: 1 },
+      target: { type: 'tableau', columnIndex: 1 },
+    })
+
+    expect(afterPlayerMove.isAutoCompleting).toBe(true)
+
+    const finished = drainAutoQueue(afterPlayerMove)
+
+    expect(finished.tableau.every((column) => column.length === 0)).toBe(true)
+    expect(finished.foundations.clubs.map((pileCard) => pileCard.rank)).toEqual([
+      1, 2, 3, 4, 5,
+    ])
+    expect(finished.foundations.hearts.map((pileCard) => pileCard.rank)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ])
   })
 
   it('lets the player manually finish and win with Auto Up disabled', () => {
