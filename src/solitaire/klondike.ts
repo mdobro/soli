@@ -1072,8 +1072,9 @@ const scheduleAutoQueue = (state: GameState): GameState => {
   // Honest limitation: planAutoActions is greedy and only knows tableau-top →
   // foundation, waste-top → foundation and waste-top → tableau. Boards a human could
   // still finish (e.g. one needing a tableau → tableau move first) are refused and
-  // must be played by hand. That is strictly better than before — we never refuse a
-  // board the old gate accepted — but it is not a solver.
+  // must be played by hand. Every board whose run the old gate actually finished is
+  // still accepted (same planner, same plan), so this only ever adds boards — but it
+  // is a greedy planner, not a solver.
   const { actions, endState } = planAutoActions(state)
   if (!actions.length || !isBoardCleared(endState)) {
     return state
