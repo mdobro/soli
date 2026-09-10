@@ -3,6 +3,8 @@ import type { Dispatch, MutableRefObject } from 'react'
 
 import type { GameAction, GameSnapshot, GameState } from '../../../solitaire/klondike'
 import { buildSolverRequest, parseSolverResponse } from '../../../solitaire/solverBridge'
+import { devLog } from '../../../utils/devLogger'
+import { planRewindSteps, resolveRewindStepDelayMs } from '../constants'
 import {
   findLastWinnableIndex,
   type WinnableProbeResult,
@@ -114,23 +116,82 @@ export const useRewindToWinnable = ({
   // insurance against offering a button that would no-op.
   const canRewind = boundaryIndex !== null && boundaryIndex < state.history.length
 
+  // Playback timer for the stepped rewind. One pending timeout at a time; the
+  // ref is the cancel handle for unmount and for a superseded rewind.
+  const playbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [rewinding, setRewinding] = useState(false)
+
+  const stopPlayback = useCallback(() => {
+    if (playbackTimerRef.current !== null) {
+      clearTimeout(playbackTimerRef.current)
+      playbackTimerRef.current = null
+    }
+    setRewinding(false)
+  }, [])
+
+  // Cancel on unmount, and when the DEAL changes underneath us — a timer that
+  // outlives its board would scrub a game the player has already left.
+  //
+  // Deliberately keyed on exactId and NOT on warningEraKey: the very first step
+  // scrubs below the era's boundary, which by design exits the era and nulls
+  // warningEraKey. Keying this on the era therefore cancelled playback after one
+  // step — the whole rewind collapsed back into the single jump it replaced.
+  useEffect(() => stopPlayback, [stopPlayback, state.exactId])
+
   const rewindToWinnable = useCallback(() => {
     const index = boundaryIndex
     if (index === null || index >= stateRef.current.history.length) {
       return
     }
-    // SCRUB_TO_INDEX on purpose, NOT a new reducer action: the jump has to be
-    // indistinguishable from a manual scrub so history, redo and the move log
-    // (and therefore replay and MOVE_LOG_VERSION) behave exactly as they
-    // already do. The whole feature is a shortcut to a gesture the player
-    // could perform by hand.
-    dispatch({ type: 'SCRUB_TO_INDEX', index })
-  }, [boundaryIndex, dispatch, stateRef])
+    stopPlayback()
+
+    // Stepped playback rather than one jump: each SCRUB_TO_INDEX moves the
+    // board back a single move, so the EXISTING card flights animate it and the
+    // player sees what is being undone instead of the board teleporting.
+    //
+    // Still SCRUB_TO_INDEX and nothing else, NOT a new reducer action: every
+    // step has to be indistinguishable from a manual scrub so history, redo and
+    // the move log (and therefore replay and MOVE_LOG_VERSION) behave exactly as
+    // they already do. The whole feature is a shortcut to a gesture the player
+    // could perform by hand — now including how it looks.
+    // planRewindSteps is the tested shape of the walk; the loop below still
+    // re-derives each next index from the LIVE board so an interfering undo or
+    // scrub abandons playback rather than replaying a stale plan.
+    const plannedSteps = planRewindSteps(stateRef.current.history.length, index)
+    if (!plannedSteps.length) {
+      return
+    }
+    const stepDelayMs = resolveRewindStepDelayMs(plannedSteps.length)
+    setRewinding(true)
+
+    const step = () => {
+      const current = stateRef.current.history.length
+      // Re-read the live board every step. If anything else moved the timeline
+      // (an undo, a scrub, a new deal), abandon playback rather than fighting
+      // the player for control of the board.
+      if (current <= index) {
+        stopPlayback()
+        return
+      }
+      devLog('log', '[Rewind] step', { from: current, to: current - 1, target: index })
+      dispatch({ type: 'SCRUB_TO_INDEX', index: current - 1 })
+      if (current - 1 <= index) {
+        stopPlayback()
+        return
+      }
+      playbackTimerRef.current = setTimeout(step, stepDelayMs)
+    }
+
+    step()
+  }, [boundaryIndex, dispatch, stateRef, stopPlayback])
 
   return {
     // Same value drives both surfaces (the action and the scrubber marker) so
     // they can never disagree.
     rewindIndex: canRewind ? boundaryIndex : null,
     rewindToWinnable,
+    // True while the stepped playback is running, so the dock can keep the
+    // pill pressed-looking / inert instead of letting a second press restart it.
+    rewinding,
   }
 }
