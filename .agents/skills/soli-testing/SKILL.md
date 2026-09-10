@@ -35,7 +35,8 @@ Parsed by `processDemoLink()` in `src/features/klondike/hooks/useDemoGameLaunche
 | `soli://?demo=scrubbed` | **Scrubbed mid-game fixture**: deterministic board, 80 moves scrubbed to index 40 → 40 undos + 40 redos, Auto Up off. `&steps=S&scrub=K` for other depths (clamped; defaults keep the pinned card labels valid) |
 | `soli://?demo=nearwin&left=N` | **Near-win fixture**: solution replayed to N moves before completion (default 1), Auto Up off — finish manually for a REAL win + celebration |
 | `soli://?deal=<exactId>&draw=N` | New game from an exact deal id (`E1_...`) — bug repro, hand-crafted scenarios. `draw` optional; invalid id devLogged + ignored |
-| `soli://?set=drawCount:3,autoUp:off,solvableOnly:on,warnings:stuck,hintButton:on` | Apply settings without UI taps (`drawCount` 1–5; booleans on/off: `autoUp`, `solvableOnly`, `hintButton`; `warnings:off\|stuck\|unwinnable` = warning-mode select [stuck = "no more useful moves", the default]. Aliases: `hints` → `hintButton`; round-2 `stuckWarning`/`unwinnableWarning:on\|off` map into the select without downgrading a stronger mode). Unknown pairs devLogged + skipped, rest applies |
+| `soli://?set=drawCount:3,autoUp:off,solvableOnly:on,warnings:stuck,hintButton:on,rewind:on` | Apply settings without UI taps (`drawCount` 1–5; booleans on/off: `autoUp`, `solvableOnly`, `hintButton`, `rewind`; `warnings:off\|stuck\|unwinnable` = warning-mode select [stuck = "no more useful moves", the default]. Aliases: `hints` → `hintButton`, `rewindToWinnable` → `rewind`; round-2 `stuckWarning`/`unwinnableWarning:on\|off` map into the select without downgrading a stronger mode). Unknown pairs devLogged + skipped, rest applies |
+| `soli://?set=warnings:unwinnable,rewind:on` | **Rewind to last winnable move** in one link: `rewind` alone does nothing visible — the action only appears while a warning is outstanding, so the warning mode must be on too. Default OFF |
 | `soli://?reset=undoHint` / `?reset=game` | Targeted resets, section 4 |
 | `soli://?celebration=<modeId\|random>` | Celebration overlay on the current board WITHOUT winning (note below). With `&screenshot=1` the header shows synthetic MOVES/TIME; `&moves=N&time=SECONDS` overrides them |
 | `soli://demo-game` | Old handcrafted demo (rarely useful — no undo history) |
@@ -103,6 +104,8 @@ The board exposes a full a11y tree — always prefer it over coordinate taps. So
 | Undo button | — | `undo` |
 | Undo-hint bubble | not queryable on Android | `undo-hint` |
 | Scrubber track | invisible at rest (both platforms) | `undo-scrubber-track` (only while scrubbing) |
+| Rewind pill | `Rewind to last winnable move` | `rewind-to-winnable` |
+| Winnable marker on the track | read it off the track's label: `Undo scrubber, position N of M, last winnable move K` | `undo-scrubber-winnable-marker` (child of the accessible track, so assert via the track label) |
 
 agent-device usage:
 
