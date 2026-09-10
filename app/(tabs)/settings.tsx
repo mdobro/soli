@@ -95,12 +95,18 @@ export default function SettingsScreen() {
             />
             {/* Placed directly after the warning select on purpose: the rewind
                 action only ever appears while one of those warnings is
-                showing, so the two rows read as a pair. */}
+                showing, so the two rows read as a pair. Greyed out when
+                warnings are off, because the rewind rides on the warning
+                (useRewindToWinnable gates on warningEraKey) — with no warning
+                it can never appear, so an enabled-looking switch that silently
+                does nothing would be a lie. The stored value is deliberately
+                NOT cleared: turning warnings back on restores the choice. */}
             <DescribedSwitchRow
               label={rewindToWinnablePreference.label}
               description={rewindToWinnablePreference.description}
               value={state.hints.rewindToWinnable}
               onValueChange={setRewindToWinnableEnabled}
+              disabled={state.hints.warningMode === 'off'}
             />
           </FieldGroup.Section>
 
