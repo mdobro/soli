@@ -116,8 +116,15 @@ export const UNDO_SCRUBBER_SAFE_AREA_BOTTOM_PADDING = 20
 // The distance varies enormously (4 moves in the stuck fixture, 40+ after a
 // real mistake), so a fixed per-step delay would either crawl or flicker. The
 // step delay is therefore derived from a target TOTAL duration and clamped:
-// short rewinds get the slow, readable end, long ones stay brisk without
-// dropping below one card-flight per step.
+// short rewinds get the slow, readable end, long ones the brisk one.
+//
+// The floor is HALF a card flight, not a whole one, and that is deliberate:
+// past ~20 steps each flight is still in the air when the next one starts, so
+// two cards overlap. The alternative — a 90 ms floor, one full flight per step
+// — makes a 40-move rewind take 3.6 s (and a 100-move one nine seconds) with
+// the pill inert throughout, which is a worse answer to "show me what is being
+// undone" than briefly overlapping flights on a walk that is all in the same
+// direction. Keep the two in sync if either changes.
 export const REWIND_PLAYBACK_TARGET_TOTAL_MS = 900
 export const REWIND_PLAYBACK_MIN_STEP_MS = CARD_ANIMATION_DURATION_MS / 2
 export const REWIND_PLAYBACK_MAX_STEP_MS = 140
@@ -138,7 +145,10 @@ export const resolveRewindStepDelayMs = (steps: number): number => {
 // one move per step. Pure so the sequence is testable without React: the hook
 // re-derives the next index from the LIVE board each tick (so an interfering
 // undo or scrub abandons playback), and this is the shape that walk must have.
-export const planRewindSteps = (fromHistoryLength: number, boundary: number): number[] => {
+export const planRewindSteps = (
+  fromHistoryLength: number,
+  boundary: number
+): number[] => {
   if (!Number.isInteger(fromHistoryLength) || !Number.isInteger(boundary)) {
     return []
   }
@@ -148,4 +158,3 @@ export const planRewindSteps = (fromHistoryLength: number, boundary: number): nu
   }
   return steps
 }
-

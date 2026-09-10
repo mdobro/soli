@@ -1,4 +1,5 @@
 import {
+  CARD_ANIMATION_DURATION_MS,
   REWIND_PLAYBACK_MAX_STEP_MS,
   REWIND_PLAYBACK_MIN_STEP_MS,
   REWIND_PLAYBACK_TARGET_TOTAL_MS,
@@ -14,6 +15,17 @@ import {
 // moves in the stuck demo fixture, 40+ after a real mistake — so a fixed
 // per-step delay either crawls or blurs.
 describe('rewind step pacing', () => {
+  it('floors at HALF a card flight, not a whole one', () => {
+    // The constant, its comment in constants.ts and this suite disagreed once:
+    // the floor is 45 ms, so past ~20 steps the flights overlap. That is the
+    // deliberate trade (a 90 ms floor makes a 40-move rewind take 3.6 s with
+    // the pill inert throughout). Pinned here so the three cannot drift apart
+    // again: change this line and you must change that comment.
+    expect(REWIND_PLAYBACK_MIN_STEP_MS).toBe(CARD_ANIMATION_DURATION_MS / 2)
+    // Where the overlap starts, stated as a number rather than left implied.
+    expect(REWIND_PLAYBACK_TARGET_TOTAL_MS / REWIND_PLAYBACK_MIN_STEP_MS).toBe(20)
+  })
+
   it('clamps to the readable end for short rewinds', () => {
     // An even split of the target across 2 steps exceeds the cap, so it clamps.
     expect(resolveRewindStepDelayMs(1)).toBe(REWIND_PLAYBACK_MAX_STEP_MS)
