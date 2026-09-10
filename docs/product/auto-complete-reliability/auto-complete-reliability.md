@@ -24,7 +24,7 @@ root causes, both fixed:
 `MOVE_LOG_VERSION` bumped 1 → 2: auto-queue scheduling is a replay input, so
 shipped 1.0 move logs must not replay under the new rules.
 
-Gates green: `yarn typecheck && yarn lint && yarn jest` → 35 suites, 370 tests.
+Gates green: `yarn typecheck && yarn lint && yarn jest` → 35 suites, 384 tests.
 
 ## Description
 
@@ -230,10 +230,10 @@ hook (`src/features/klondike/hooks/useAutoQueueRunner.ts`).
 
 ## Testing
 
-`yarn typecheck && yarn lint && yarn jest` — 35 suites, 370 tests, green.
+`yarn typecheck && yarn lint && yarn jest` — 35 suites, 384 tests, green.
 
-New/changed tests, each verified to fail without its fix (by restoring the
-pre-change source file and re-running):
+New/changed tests, each verified to fail without its fix (by reverting that one
+fix in place and re-running the whole suite):
 
 | Test | Fails without fix |
 | ---- | ----------------- |
@@ -241,16 +241,50 @@ pre-change source file and re-running):
 | `autoUpSetting`: starts Auto Up for Draw 2-5 after the final draw even though the waste still holds a card | yes |
 | `autoUpSetting`: drains a trivially winnable Draw 3 board all the way to a won state | yes |
 | `autoUpSetting`: does not schedule a run it cannot finish on an all-face-up Draw 1 board | yes |
+| `autoUpSetting`: starts and finishes a run on a finishable board in Draw 1-5 (5 tests) | yes for 2/3/4/5 |
+| `autoUpSetting`: plans a recycle when the run only becomes possible after one | only if the planner bound is tightened (see below) |
+| `autoUpSetting`: refuses an all-face-up board that only a tableau to tableau move can finish | yes |
 | `autoQueue`: keeps a running auto queue alive when a move is rejected | yes |
 | `autoQueue`: keeps a running auto queue alive when a scrub lands on the current index | yes |
+| `autoQueue`: drops a queued move that no longer applies and keeps advancing | yes (against a bail-out rewrite of `advanceAutoQueue`) |
 | `autoQueueRunner`: does not arm the timeout while the board is locked | yes |
 | `autoQueueRunner`: re-arms the run when the board lock clears without any state change | yes |
 | `autoQueueRunner`: arms/cadence/idle (3 tests) | no — they pin existing behaviour that had no coverage |
+| `autoQueueRunner`: reducer + runner, empties the board once a run starts | yes |
+| `autoQueueRunner`: reducer + runner, resumes and finishes a run interrupted by the board lock | yes |
+| `autoQueueRunner`: reducer + runner, finishes a run a rejected tap lands in the middle of | yes |
+| `autoQueueRunner`: reducer + runner, finishes a run a no-op scrub lands in the middle of | yes |
+| `moveLog`: replays a full auto-complete run to the same board and undo depth | yes |
+| `gamePersistence`: never restores a stranded auto-complete run from a save taken mid-run | no — pins the invariant that keeps the stale-flag state unreachable |
+
+The four hook-level `autoQueueRunner` cases that drive the real reducer through a
+lock-aware dispatcher are the ones that assert what the player sees ("the board
+empties itself"); the isolated dispatch-counting cases above them cannot tell a
+resumed run from a run that resumes and then stalls one step later.
+
+**The second-recycle planner bound has no behavioural test, and cannot have one.**
+Truncating a hopeless plan at ~2 stock passes instead of 500 changes how long the
+simulation runs, not what it decides: either way the end board is not cleared and
+`scheduleAutoQueue` refuses. Removing the bound entirely leaves all 384 tests
+green. What *is* pinned is its safety envelope — tightening it by one step (never
+recycling) fails "plans a recycle when the run only becomes possible after one".
+The soundness claim behind the bound was re-verified separately: for every draw
+count 1-5, stock size 1-24 and waste size 0-5, a full pass plus a recycle returns
+the stock bit-for-bit, so a third pass can only repeat the second. (`getNextStockDrawCards`
+reverses each drawn chunk, which is what makes the round trip exact.)
 
 Not done here (no device access in this workspace): on-device verification of a
 real Draw 3 endgame and of the board-lock resume. Worth one smoke pass on the
 device — deal a Draw 3 game, play it until the tableau is all face up with cards
 still in stock/waste, and confirm the run starts and finishes.
+
+Known hole, not reachable today and deliberately not "fixed": `HYDRATE_STATE`
+with Auto Up on keeps an incoming `isAutoCompleting: true` that carries an empty
+queue, and nothing would ever clear it (the runner only arms on a non-empty
+queue). Every producer of a hydration payload forces both fields off —
+`snapshotFromState`/`cloneSnapshot` hardcode them, and the replay path rebuilds
+them coherently — so the state cannot be reached; the persistence test above pins
+the producer side rather than adding a defensive reducer branch.
 
 ## Follow-ups
 
