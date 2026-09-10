@@ -21,6 +21,7 @@
     "scrubtest": "node scripts/deeplink.js scrubtest",
     "nearwin": "node scripts/deeplink.js nearwin",
     "unwinnable": "node scripts/deeplink.js unwinnable",
+    "stuck": "node scripts/deeplink.js stuck",
     "deadend": "node scripts/deeplink.js unwinnable",
     "seedhistory": "node scripts/deeplink.js seedhistory",
     "build:ios": "node scripts/ensure-rust-solver.js && npx eas build --platform ios --profile production --non-interactive",

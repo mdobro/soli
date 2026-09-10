@@ -26,10 +26,10 @@ const UNLOCK_SCRIPT = path.join(__dirname, 'android-unlock-pattern.sh')
 const ANDROID_READY_SCRIPT = path.join(__dirname, 'android-ready.sh')
 const USAGE =
   "Usage: yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry] [--screenshot]\n" +
-  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · unwinnable · seedhistory [clear]\n' +
+  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · unwinnable · stuck · seedhistory [clear]\n' +
   '--screenshot appends screenshot=1 (store-screenshot mode: dev mode forced OFF, no Demo button / celebration badge)'
 
-// Fixture shortcuts (scrubtest/nearwin/unwinnable) force-stop by DEFAULT:
+// Fixture shortcuts (scrubtest/nearwin/unwinnable/stuck) force-stop by DEFAULT:
 // a stale demo playlist still running in the warm app can overwrite the fixture
 // you just loaded (the known warm-app trap, skill section 3). celebration/seedhistory
 // act on the running app state, so they deliver warm. --cold/--warm override.
@@ -50,13 +50,19 @@ const SHORTCUTS = {
     build: ([left]) =>
       `soli://?demo=nearwin${left !== undefined ? `&left=${left}` : ''}`,
   },
-  // Named after the WARNING MODE it trips, and parameterless on purpose
-  // (rewind-to-winnable): its whole value is the PINNED solver verdicts behind
-  // it, so there is no depth knob that could hand out an unverified position.
+  // Both fixtures are named after the WARNING MODE they trip and are
+  // parameterless on purpose (rewind-to-winnable): their whole value is the
+  // PINNED solver verdicts behind them, so there is no depth knob that could
+  // hand out an unverified position.
   // `unwinnable` = lost but still has moves → the `unwinnable` warning mode.
   unwinnable: {
     cold: true,
     build: () => 'soli://?demo=unwinnable',
+  },
+  // `stuck` = stock empty + no useful move → the DEFAULT `noUsefulMoves` mode.
+  stuck: {
+    cold: true,
+    build: () => 'soli://?demo=stuck',
   },
   // Kept as an alias: `deadend` was the original spelling and is already in
   // device notes and scripts.

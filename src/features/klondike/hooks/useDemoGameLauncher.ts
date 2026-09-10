@@ -19,6 +19,7 @@ import {
   createDemoReplayGameState,
   createNearWinGameState,
   createScrubbedMidGameState,
+  createStuckGameState,
   createUnwinnableGameState,
   getDemoUndoProbePlan,
   resolveDemoReplayAction,
@@ -32,7 +33,8 @@ import { devLog } from '../../../utils/devLogger'
 
 type DispatchGameActionFn = (action: GameAction) => void
 // Fixture modes are named after the warning MODE each one trips (2026-09-10):
-// 'unwinnable' = solver-proven lost but still has legal moves.
+// 'unwinnable' = solver-proven lost but still has legal moves; 'stuck' = the
+// shipped DEFAULT warning's predicate (stock empty + no useful move).
 export type DemoLaunchMode =
   | 'old'
   | 'single'
@@ -40,6 +42,7 @@ export type DemoLaunchMode =
   | 'scrubbed'
   | 'nearwin'
   | 'unwinnable'
+  | 'stuck'
 
 type UseDemoGameLauncherOptions = {
   stateRef: MutableRefObject<GameState>
@@ -813,7 +816,8 @@ export const useDemoGameLauncher = ({
       if (
         demoMode === 'scrubbed' ||
         demoMode === 'nearwin' ||
-        demoMode === 'unwinnable'
+        demoMode === 'unwinnable' ||
+        demoMode === 'stuck'
       ) {
         // Deterministic replay fixtures, all with Auto Up OFF:
         // - scrubbed (scrubber-test-automation): "far game, scrubbed to middle",
@@ -825,6 +829,9 @@ export const useDemoGameLauncher = ({
         // - unwinnable (rewind-to-winnable): solver-PROVEN unwinnable position on
         //   a provably winnable history — lost but NOT stuck, so it trips the
         //   `unwinnable` warning mode.
+        // - stuck (rewind-to-winnable, round 2): stock empty AND no useful move,
+        //   so it trips the shipped DEFAULT `noUsefulMoves` mode — the one the
+        //   player actually plays in. Also solver-proven unwinnable.
         let fixtureState: GameState
         try {
           fixtureState =
@@ -832,10 +839,12 @@ export const useDemoGameLauncher = ({
               ? createNearWinGameState(options?.nearWinMovesLeft)
               : demoMode === 'unwinnable'
                 ? createUnwinnableGameState()
-                : createScrubbedMidGameState({
-                    steps: options?.scrubbedSteps,
-                    scrubIndex: options?.scrubbedScrubIndex,
-                  })
+                : demoMode === 'stuck'
+                  ? createStuckGameState()
+                  : createScrubbedMidGameState({
+                      steps: options?.scrubbedSteps,
+                      scrubIndex: options?.scrubbedScrubIndex,
+                    })
         } catch (error) {
           // Only reachable on fixture drift (regenerated playlist); fail loudly
           // instead of hydrating a corrupt board.
@@ -1108,11 +1117,14 @@ export const useDemoGameLauncher = ({
       // soli://?demo=unwinnable → solver-proven unwinnable position with a
       // winnable history (lost, but moves remain → `unwinnable` warning mode).
       // `deadend` stays as an alias: it was the original spelling and is already
-      // in device notes/scripts. Parameterless on purpose — the fixture's whole
-      // value is that the solver verdicts behind it are PINNED and verified, and
-      // a depth knob would hand out unverified positions.
+      // in device notes/scripts. Both parameterless on purpose — the fixtures'
+      // whole value is that the solver verdicts behind them are PINNED and
+      // verified, and a depth knob would hand out unverified positions.
       const demoRequestsUnwinnable =
         normalizedDemoParam === 'unwinnable' || normalizedDemoParam === 'deadend'
+      // soli://?demo=stuck → stock empty + no useful move → the DEFAULT
+      // `noUsefulMoves` warning mode (rewind-to-winnable plan, round 2).
+      const demoRequestsStuck = normalizedDemoParam === 'stuck'
       const recordHistoryParam =
         parsed.searchParams.get('recordHistory') ?? parsed.searchParams.get('history')
       const nextRecordHistoryEnabled = parseOptionalBooleanParam(recordHistoryParam)
@@ -1126,7 +1138,8 @@ export const useDemoGameLauncher = ({
         demoRequestsAutoReveal ||
         demoRequestsScrubbed ||
         demoRequestsNearWin ||
-        demoRequestsUnwinnable
+        demoRequestsUnwinnable ||
+        demoRequestsStuck
       ) {
         lastDemoLinkRef.current = incomingUrl
 
@@ -1179,11 +1192,12 @@ export const useDemoGameLauncher = ({
           return
         }
 
-        if (demoRequestsUnwinnable) {
+        if (demoRequestsUnwinnable || demoRequestsStuck) {
           applyLinkDeveloperMode()
+          const fixtureMode: DemoLaunchMode = demoRequestsStuck ? 'stuck' : 'unwinnable'
           setTimeout(() => {
             handleLaunchDemoGame({
-              demoMode: 'unwinnable',
+              demoMode: fixtureMode,
               force: true,
               screenshotMode,
             })

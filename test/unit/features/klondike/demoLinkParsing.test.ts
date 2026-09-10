@@ -8,6 +8,11 @@ import {
   type WarningLinkUpdate,
 } from '../../../../src/features/klondike/hooks/useDemoGameLauncher'
 import { createInitialState, type GameState } from '../../../../src/solitaire/klondike'
+import {
+  createStuckGameState,
+  createUnwinnableGameState,
+} from '../../../../src/solitaire/demoReplay'
+import { boardSignature } from '../../../../src/storage/gamePersistence'
 import type { WarningMode } from '../../../../src/state/settings'
 
 // Only Linking is used from react-native on this path, and mocking it lets the
@@ -213,9 +218,7 @@ describe('resolveWarningLinkUpdate', () => {
     expect(apply('noUsefulMoves', { alias: 'unwinnable', enabled: true })).toBe(
       'unwinnable'
     )
-    expect(apply('unwinnable', { alias: 'unwinnable', enabled: true })).toBe(
-      'unwinnable'
-    )
+    expect(apply('unwinnable', { alias: 'unwinnable', enabled: true })).toBe('unwinnable')
   })
 
   it('unwinnableWarning:off steps back down to the classic default', () => {
@@ -359,5 +362,87 @@ describe('?set= links through processDemoLink', () => {
     expect(await deliver('soli://?set=unwinnableWarning:on#retry-2')).toEqual({
       warningMode: 'unwinnable',
     })
+  })
+})
+
+// --- Fixture demo links (rewind-to-winnable round 2) ------------------------
+// The two warning fixtures are reachable by name, and `deadend` still works as
+// the original spelling of `unwinnable`. Asserted through the real
+// processDemoLink so the alias and the routing are covered, not just the parser.
+describe('?demo= fixture links', () => {
+  const launch = async (url: string) => {
+    const dispatch = jest.fn()
+    const Harness = () => {
+      useDemoGameLauncher({
+        stateRef: useRef<GameState>(createInitialState(1)),
+        dispatch,
+        dispatchGameAction: jest.fn(),
+        developerModeEnabled: true,
+        setDeveloperMode: jest.fn(),
+        boardLockedRef: useRef(false),
+        clearCelebrationDialogTimer: jest.fn(),
+        recordCurrentGameResult: jest.fn(),
+        setCelebrationState: jest.fn(),
+        winCelebrationsRef: useRef(0),
+        clearCurrentGameEntryLink: jest.fn(),
+        demoPlaybackActiveRef: useRef(false),
+        updateBoardLocked: jest.fn(),
+        clearGameState: () => Promise.resolve(),
+        preferredDrawCount: 1,
+        autoUpEnabled: true,
+        seedHistoryForTesting: jest.fn(),
+        setDrawCount: jest.fn(),
+        setAutoUpEnabled: jest.fn(),
+        setSolvableGamesOnly: jest.fn(),
+        setWarningMode: jest.fn(),
+        setHintButtonEnabled: jest.fn(),
+        setRewindToWinnableEnabled: jest.fn(),
+        resetUndoHintForTesting: jest.fn(),
+        dealNewGameForTesting: jest.fn(),
+        startGameFromExactDeal: jest.fn(),
+        startCelebrationPreview: jest.fn(),
+      })
+      return null
+    }
+
+    jest.useFakeTimers()
+    let renderer: TestRenderer.ReactTestRenderer | undefined
+    await act(async () => {
+      renderer = TestRenderer.create(createElement(Harness))
+    })
+    await act(async () => {
+      Linking.emitUrl(url)
+    })
+    // The launcher settles every deep link by DEMO_AUTO_STEP_INTERVAL_MS.
+    await act(async () => {
+      jest.advanceTimersByTime(1000)
+    })
+    await act(async () => {
+      renderer?.unmount()
+    })
+    jest.useRealTimers()
+
+    const hydrate = dispatch.mock.calls
+      .map(([action]) => action as { type: string; state?: GameState })
+      .find((action) => action.type === 'HYDRATE_STATE')
+    return hydrate?.state
+  }
+
+  it('routes ?demo=unwinnable to the unwinnable fixture', async () => {
+    const state = await launch('soli://?demo=unwinnable#retry-1')
+    expect(state).toBeDefined()
+    expect(boardSignature(state!)).toBe(boardSignature(createUnwinnableGameState()))
+  })
+
+  it('keeps ?demo=deadend working as the original spelling', async () => {
+    const state = await launch('soli://?demo=deadend#retry-2')
+    expect(state).toBeDefined()
+    expect(boardSignature(state!)).toBe(boardSignature(createUnwinnableGameState()))
+  })
+
+  it('routes ?demo=stuck to the stuck fixture', async () => {
+    const state = await launch('soli://?demo=stuck#retry-3')
+    expect(state).toBeDefined()
+    expect(boardSignature(state!)).toBe(boardSignature(createStuckGameState()))
   })
 })
