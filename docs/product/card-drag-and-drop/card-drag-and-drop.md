@@ -187,10 +187,11 @@ New: `cards/dragGeometry.ts` (pure), `cards/cardLayerItems.ts` (pure, extracted)
 
 ## Files actually modified
 
-Exactly the list above, plus `test/unit/solitaire/klondike.selection.test.ts` (a
-`previewSelectionStack` case) and `test/unit/features/klondike/cardAccessibility.test.ts` /
-`test/unit/features/klondike/hintOverlay.test.ts` were left untouched — the `cardLayerItems`
-extraction kept every existing import site working through the component module's re-exports.
+Exactly the list above, plus `test/unit/solitaire/klondike.selection.test.ts` (three
+`previewSelectionStack` cases). No other test needed touching: the `cardLayerItems` extraction kept
+every existing import site working through `AbsoluteCardLayer`'s re-exports.
+
+Gate delta: 34 suites / 361 tests → **35 suites / 387 tests**.
 
 ## Intermediary learnings
 
@@ -312,6 +313,32 @@ The overlay is mounted only while a drag session exists. Shared values live in `
 outlive the overlay), and `onStart` zeroes `dragX`/`dragY`/`lift` at the start of each drag. That is
 why the legal-drop path does **not** reset them at release: resetting them synchronously while the
 overlay is still mounted for one more commit would flash the copies back to the origin.
+
+### 9. Four release-path races found in self-review, all closed
+
+RNGH's `cancelsTouchesInView` only cancels the touches that were live when the pan activated, so a
+**second finger can still reach a `Pressable` while a drag is running** — and the auto-queue can
+dispatch, and the Undo button is right there. The release path was hardened accordingly:
+
+- The selection is re-checked at the drop: if it no longer lifts the card the player picked up, the
+  board moved under the drag and dropping would move a card they never grabbed → silent snap back.
+  The sloppy-tap fallback is suppressed too (it would route a tap to a stale `cardIndex`).
+- The legal-drop handoff also requires the drag to still be enabled. `dispatchGameAction` silently
+  drops actions while the board is locked, and by then the cards have already been seeded to the
+  drop point — they would have stayed there with no flight to correct them. This is the one real
+  sharp edge of the seed-then-dispatch handoff and it is worth remembering.
+- The snap-back's completion callback ignores an unfinished animation: `onStart` is the only other
+  writer of `dragX`/`dragY`/`lift`, so "unfinished" means a *new* drag interrupted it, and clearing
+  then would have wiped the fresh session.
+- The session ref is written synchronously by begin/clear, not only on the next render, so a flick
+  fast enough to release before React commits `beginDrag`'s `setState` still resolves properly.
+
+### 10. Only one function needed to be a worklet
+
+`hitTestDragSource` runs in `onTouchesDown` on the UI thread and is the only `'worklet'` in
+`dragGeometry.ts`. Everything else resolves on JS (see learning 4), which also means the module
+loads in jest unchanged — the `'worklet'` directive is transparent to the babel pipeline there, and
+the whole file is directly unit-testable.
 
 ## Identified issues
 
