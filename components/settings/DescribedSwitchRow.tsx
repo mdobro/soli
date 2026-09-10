@@ -2,6 +2,11 @@ import { Platform } from 'react-native'
 import { Column, Row, Spacer, Switch, Text } from '@expo/ui'
 import { weight } from '@expo/ui/jetpack-compose/modifiers'
 
+import {
+  SETTINGS_ROW_DISABLED_TEXT_COLOR,
+  SETTINGS_ROW_SECONDARY_TEXT_COLOR,
+} from './settingsRowColors'
+
 type DescribedSwitchRowProps = {
   label: string
   description: string
@@ -21,10 +26,9 @@ type DescribedSwitchRowProps = {
 // Compose weight modifier (weighted children measure LAST, so the switch keeps
 // its intrinsic size and long descriptions wrap instead of squeezing it out);
 // on iOS the SwiftUI HStack handles that naturally with a flexible spacer.
-// Same mid-gray family as the description, stepped down so a disabled row
-// still reads on both Host themes without looking like an empty slot.
-const DISABLED_LABEL_COLOR = '#8E8E93'
-const DISABLED_DESCRIPTION_COLOR = '#5A5A5F'
+// Disabled look: the label drops to the same secondary gray the description
+// already uses and the switch goes inert — see settingsRowColors.ts for why a
+// dimmer third value cannot work on both Host themes at once.
 
 export const DescribedSwitchRow = ({
   label,
@@ -35,12 +39,15 @@ export const DescribedSwitchRow = ({
 }: DescribedSwitchRowProps) => (
   <Row alignment="center" spacing={12}>
     <Column spacing={2} modifiers={Platform.OS === 'android' ? [weight(1)] : undefined}>
-      <Text textStyle={disabled ? { color: DISABLED_LABEL_COLOR } : undefined}>{label}</Text>
-      {/* Mid-gray stays readable on both light and dark Host themes. */}
+      <Text
+        textStyle={disabled ? { color: SETTINGS_ROW_DISABLED_TEXT_COLOR } : undefined}
+      >
+        {label}
+      </Text>
       <Text
         textStyle={{
           fontSize: 13,
-          color: disabled ? DISABLED_DESCRIPTION_COLOR : '#8E8E93',
+          color: SETTINGS_ROW_SECONDARY_TEXT_COLOR,
         }}
       >
         {description}
