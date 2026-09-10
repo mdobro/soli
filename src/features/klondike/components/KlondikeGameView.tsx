@@ -9,6 +9,7 @@ import { TopRow, type TopRowProps } from './cards/TopRow'
 import { TableauSection, type TableauSectionProps } from './cards/TableauSection'
 import { AbsoluteCardLayer, type AbsoluteCardLayerProps } from './cards/AbsoluteCardLayer'
 import { HintOverlayLayer, type HintOverlayLayerProps } from './cards/HintOverlayLayer'
+import { DragOverlayLayer, type DragOverlayLayerProps } from './cards/DragOverlayLayer'
 import { CelebrationOverlayLayer } from './cards/CelebrationOverlayLayer'
 import { CelebrationTouchBlocker } from './cards/CelebrationTouchBlocker'
 import { CelebrationDebugBadge } from './CelebrationDebugBadge'
@@ -35,6 +36,7 @@ export type KlondikeGameViewProps = {
   onCelebrationOverlayReady: () => void
   undoScrubProps: UndoScrubberProps
   hintOverlayProps: HintOverlayLayerProps | null
+  dragOverlayProps: DragOverlayLayerProps | null
   absoluteCardLayerProps: AbsoluteCardLayerProps | null
 }
 
@@ -54,6 +56,7 @@ export const KlondikeGameView: React.FC<KlondikeGameViewProps> = ({
   onCelebrationOverlayReady,
   undoScrubProps,
   hintOverlayProps,
+  dragOverlayProps,
   absoluteCardLayerProps,
 }) => {
   const hasStats = statisticsRows.length > 0
@@ -107,6 +110,12 @@ export const KlondikeGameView: React.FC<KlondikeGameViewProps> = ({
             HINT_OVERLAY_Z_INDEX in HintOverlayLayer). pointerEvents-none
             inside; null during normal play. */}
         {hintOverlayProps ? <HintOverlayLayer {...hintOverlayProps} /> : null}
+
+        {/* Lifted cards during a drag. Same story as the hint overlay: sibling
+            order alone does NOT paint it above the cards, so it carries its own
+            DRAG_OVERLAY_Z_INDEX (above the flight band, below the hint band).
+            pointerEvents-none inside; null during normal play. */}
+        {dragOverlayProps ? <DragOverlayLayer {...dragOverlayProps} /> : null}
 
         <CelebrationOverlayLayer
           celebrationState={celebrationState}
