@@ -26,12 +26,12 @@ const UNLOCK_SCRIPT = path.join(__dirname, 'android-unlock-pattern.sh')
 const ANDROID_READY_SCRIPT = path.join(__dirname, 'android-ready.sh')
 const USAGE =
   "Usage: yarn deeplink <shortcut|'<soli:// url>'> [args] [--cold|--warm] [--ios|--android] [--serial <s>] [--no-retry] [--screenshot]\n" +
-  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · seedhistory [clear]\n' +
+  'Shortcuts: celebration [modeId] · scrubtest [steps] [scrub] · nearwin [left] · deadend · seedhistory [clear]\n' +
   '--screenshot appends screenshot=1 (store-screenshot mode: dev mode forced OFF, no Demo button / celebration badge)'
 
-// Fixture shortcuts (scrubtest/nearwin) force-stop by DEFAULT: a stale demo
-// playlist still running in the warm app can overwrite the fixture you just
-// loaded (the known warm-app trap, skill section 3). celebration/seedhistory
+// Fixture shortcuts (scrubtest/nearwin/deadend) force-stop by DEFAULT: a stale
+// demo playlist still running in the warm app can overwrite the fixture you
+// just loaded (the known warm-app trap, skill section 3). celebration/seedhistory
 // act on the running app state, so they deliver warm. --cold/--warm override.
 const SHORTCUTS = {
   celebration: {
@@ -49,6 +49,13 @@ const SHORTCUTS = {
     cold: true,
     build: ([left]) =>
       `soli://?demo=nearwin${left !== undefined ? `&left=${left}` : ''}`,
+  },
+  // Parameterless on purpose (rewind-to-winnable): the fixture's whole value is
+  // the PINNED pair of solver verdicts behind it, so there is no depth knob that
+  // could hand out an unverified position.
+  deadend: {
+    cold: true,
+    build: () => 'soli://?demo=deadend',
   },
   seedhistory: {
     cold: false,

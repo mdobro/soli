@@ -16,6 +16,7 @@ import type { ExactDealId } from '../../../solitaire/dealIdentity'
 import { CELEBRATION_MODE_METADATA } from '../../../animation/celebrationModes'
 import type { CelebrationPreviewStatsRequest } from '../celebrationPreviewStats'
 import {
+  createDeadEndGameState,
   createDemoReplayGameState,
   createNearWinGameState,
   createScrubbedMidGameState,
@@ -30,7 +31,13 @@ import { setDemoProgress } from '../state/demoProgressStore'
 import { devLog } from '../../../utils/devLogger'
 
 type DispatchGameActionFn = (action: GameAction) => void
-export type DemoLaunchMode = 'old' | 'single' | 'playlist' | 'scrubbed' | 'nearwin'
+export type DemoLaunchMode =
+  | 'old'
+  | 'single'
+  | 'playlist'
+  | 'scrubbed'
+  | 'nearwin'
+  | 'deadend'
 
 type UseDemoGameLauncherOptions = {
   stateRef: MutableRefObject<GameState>
@@ -801,23 +808,29 @@ export const useDemoGameLauncher = ({
       clearPlaylistTimers()
       demoPlaybackActiveRef.current = false
 
-      if (demoMode === 'scrubbed' || demoMode === 'nearwin') {
-        // Deterministic replay fixtures, both with Auto Up OFF:
+      if (demoMode === 'scrubbed' || demoMode === 'nearwin' || demoMode === 'deadend') {
+        // Deterministic replay fixtures, all with Auto Up OFF:
         // - scrubbed (scrubber-test-automation): "far game, scrubbed to middle",
         //   40 undos + 40 redos by default, exact same board every launch; no
         //   auto-queue mutates depths underneath a test's assertions.
         // - nearwin (agent-testing-skill C5): solution replayed to N moves before
         //   completion, so an agent plays the final move(s) manually and gets a
         //   REAL win + celebration end-to-end.
+        // - deadend (rewind-to-winnable): solver-PROVEN unwinnable position on a
+        //   provably winnable history, so the unwinnable warning and the rewind
+        //   boundary are reachable in one link instead of by playing deals until
+        //   one dies.
         let fixtureState: GameState
         try {
           fixtureState =
             demoMode === 'nearwin'
               ? createNearWinGameState(options?.nearWinMovesLeft)
-              : createScrubbedMidGameState({
-                  steps: options?.scrubbedSteps,
-                  scrubIndex: options?.scrubbedScrubIndex,
-                })
+              : demoMode === 'deadend'
+                ? createDeadEndGameState()
+                : createScrubbedMidGameState({
+                    steps: options?.scrubbedSteps,
+                    scrubIndex: options?.scrubbedScrubIndex,
+                  })
         } catch (error) {
           // Only reachable on fixture drift (regenerated playlist); fail loudly
           // instead of hydrating a corrupt board.
@@ -1087,6 +1100,11 @@ export const useDemoGameLauncher = ({
       const demoRequestsScrubbed = normalizedDemoParam === 'scrubbed'
       // soli://?demo=nearwin&left=N → solution replayed to N moves before the win.
       const demoRequestsNearWin = normalizedDemoParam === 'nearwin'
+      // soli://?demo=deadend → solver-proven unwinnable position with a winnable
+      // history. Parameterless on purpose: the fixture's whole value is that the
+      // two solver verdicts behind it are PINNED and verified, and a depth knob
+      // would hand out unverified positions (rewind-to-winnable plan).
+      const demoRequestsDeadEnd = normalizedDemoParam === 'deadend'
       const recordHistoryParam =
         parsed.searchParams.get('recordHistory') ?? parsed.searchParams.get('history')
       const nextRecordHistoryEnabled = parseOptionalBooleanParam(recordHistoryParam)
@@ -1099,7 +1117,8 @@ export const useDemoGameLauncher = ({
         normalizedDemoParam === 'true' ||
         demoRequestsAutoReveal ||
         demoRequestsScrubbed ||
-        demoRequestsNearWin
+        demoRequestsNearWin ||
+        demoRequestsDeadEnd
       ) {
         lastDemoLinkRef.current = incomingUrl
 
@@ -1147,6 +1166,18 @@ export const useDemoGameLauncher = ({
               force: true,
               screenshotMode,
               nearWinMovesLeft: resolved.movesLeft,
+            })
+          }, DEMO_AUTO_STEP_INTERVAL_MS)
+          return
+        }
+
+        if (demoRequestsDeadEnd) {
+          applyLinkDeveloperMode()
+          setTimeout(() => {
+            handleLaunchDemoGame({
+              demoMode: 'deadend',
+              force: true,
+              screenshotMode,
             })
           }, DEMO_AUTO_STEP_INTERVAL_MS)
           return
